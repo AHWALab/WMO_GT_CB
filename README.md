@@ -89,13 +89,3 @@ Git Bash/WSL with the `.sh` scripts. `run_ef5.ps1` takes the same arguments:
 Results appear in `./output/` (maxq/maxunitq/precipaccum grids and
 `ts.*.csv` timeseries). Populate `data/precip/imerg/` with IMERG GeoTIFFs before
 a run with precipitation; missing files are treated as zero precipitation.
-
-## Relationship to TITO
-
-- TITO (`TITO_GuatemalaTraining/`) keeps its own `EF5/` folder, image and
-  `docker-compose.yml` — **unchanged**.
-- This workspace shares the same `ef5-container:latest` image name by default.
-  To use a distinct image, set `EF5_IMAGE=ef5-container-gt:latest` before
-  running the scripts (and tag it in `build_ef5.sh` if you rebuild).
-- Data was copied from `TITO_GuatemalaTraining` (Guatemala 900 m basic,
-  parameters, PET, states) so the workspace runs out of the box.
