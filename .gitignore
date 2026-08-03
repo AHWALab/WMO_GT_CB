@@ -67,7 +67,11 @@ EF5/*.sif
 EF5/*.tar
 
 # Nested upstream repo (cloned from github.com/yagderin/StormLab-GFS-realtime)
-StormLab-GFS-realtime/
+StormLab-GFS-realtime/WMO.zip
+StormLab-GFS-realtime/output/
+StormLab-GFS-realtime/*/__pycache__/
+StormLab-GFS-realtime/__pycache__/
+!StormLab-GFS-realtime/params/**
 
 # STREAM-Sat runtime caches (regenerated each cycle)
 STREAM-Sat-realtime/extension/realtime/state/

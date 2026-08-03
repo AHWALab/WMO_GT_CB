@@ -1,0 +1,18 @@
+name: stormlab
+channels:
+  - conda-forge
+dependencies:
+  # runtime-only environment for the operational cycle; versions pinned to
+  # the tested Argon deployment (2026-07). The solver fills in C-level deps
+  # (hdf5, libnetcdf, eccodes) consistently from these pins.
+  - python=3.11.15
+  - numpy=2.4.6
+  - scipy=1.17.1
+  - pandas=3.0.3
+  - xarray=2026.4.0
+  - netcdf4=1.7.4
+  - pyyaml=6.0.3
+  - cfgrib=0.9.15.1
+  - python-eccodes=2.47.0
+  - eccodes=2.47.0
+  - curl

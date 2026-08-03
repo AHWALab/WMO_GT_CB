@@ -1,0 +1,59 @@
+# StormLab-GFS domain configuration: Lesser Antilles presentation domain
+# (P5, 2026-07-23). Same settled recipe as Barbados — tw-CRPS lambda=3,
+# w=0, advection_scale=0.6 — no new decisions; bbox/paths only.
+domain:
+  name: lesserantilles
+  # forcing/output domain (deg) — the island arc
+  out_lat: [10.0, 17.0]
+  out_lon: [-63.0, -56.0]
+  # buffer (deg) added on each side for noise generation / spectra
+  sim_buffer: 3.0
+  res_hires: 0.1          # IMERG / output grid
+  res_coarse: 0.25        # GEFS / GFS grid
+
+forecast:
+  lead_start: 6           # hours
+  lead_end: 48
+  lead_step: 1
+  lead_bins: [[6, 12], [13, 24], [25, 36], [37, 48]]
+  n_members: 50
+  base_seed: 42           # member k uses base_seed + k; fixed for reproducibility
+  operational_forcing_members: 5  # GEFS members per operational cycle (x seeds -> n_members)
+  p_cap: 0.995            # simulation quantile cap (inherited from StormLab)
+
+covariates:               # names used throughout the package
+  - PR                    # precipitation rate, mm/h
+  - PW                    # precipitable water, kg/m2
+
+training:
+  years: [2000, 2019]
+  holdout_years: [2016, 2017, 2018, 2019]
+  gefs_members: [c00]     # archive holds c00 only
+  wet_threshold: 0.2      # mm/h, wet/dry + magnitude-fit threshold (as original)
+  min_wet_samples: 200    # per grid per lead bin; below -> fall back to pooled fit
+  max_samples_per_bin: 300000   # subsample cap to bound fit cost
+  tw_lambda: 3.0          # threshold-weighted CRPS (ratified 2026-07-21)
+
+noise:
+  window_size: 64         # SSFT window (small domains); original used 128
+  overlap_ratio: 0.3
+  ssft_war_thr: 0.1
+  advection_scale: 0.6    # ratified 2026-07-22 (scripts/15 temporal factorial)
+  large_scale_weight: 0.0 # coherent AR(1) mode off (superfluous with tw marginals)
+  spectra_match: amplitude_aware_k5  # OWNER OVERRIDE 2026-07-24: promoted
+                          # despite 2/4 pre-registered gates (see
+                          # PROJECT_STATUS.md for the verbatim rationale) —
+                          # strictly dominant vs the GEFS-pattern incumbent.
+  spectra_library_size: 200   # wet IMERG fields kept per month
+  recent_imerg_dir: null      # optional: STREAM-Sat IMERG ingest dir for live spectra
+
+paths:
+  data_root: ./data/lesserantilles
+  params_root: ./params/lesserantilles
+  output_root: ./output/lesserantilles
+
+sources:
+  gefs_reforecast_bucket: https://noaa-gefs-retrospective.s3.amazonaws.com/GEFSv12/reforecast
+  gfs_bucket: https://noaa-gfs-bdp-pds.s3.amazonaws.com
+  gefs_bucket: https://noaa-gefs-pds.s3.amazonaws.com
+  imerg_base: https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGHH.07
