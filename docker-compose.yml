@@ -1,0 +1,55 @@
+# ============================================================================
+# EF5 (Guatemala 900 m) — cross-platform Docker Compose launcher
+# ============================================================================
+# Works on Linux, Windows and macOS (Docker Desktop).
+# Compose resolves the relative bind mounts on every platform, so this single
+# file drives EF5 from the workspace folders:
+#   ./data   -> /data    (model inputs: basic, parameters, pet, states, precip)
+#   ./output -> /output  (EF5 results)
+#   ./conf   -> /conf    (EF5 control file, read-only)
+#
+# Usage (all platforms):
+#   docker compose run --rm ef5                         # run conf/control.txt
+#   docker compose run --rm ef5 /bin/sh                 # interactive shell
+#   docker compose run --rm -e OMP_NUM_THREADS=8 ef5    # override threads
+#   docker compose build                                # build image from source
+#   docker compose run --rm ef5 /ef5/bin/ef5 /conf/my_control.txt
+#
+# Convenience wrappers (recommended):
+#   ./run_ef5.sh        # Linux / macOS / WSL
+#   run_ef5.ps1         # Windows PowerShell
+# ============================================================================
+
+services:
+  ef5:
+    image: ef5-container:latest
+    # Optional: rebuild from source with:  docker compose build
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+
+    container_name: ef5-guatemala
+    restart: "no"
+
+    # Folders the EF5 container accesses
+    volumes:
+      - ./data:/data:rw
+      - ./output:/output:rw
+      - ./conf:/conf:ro
+
+    # Optional on Linux: run as the host user instead of root
+    # (export UID/GID first). Leave commented on Windows/macOS.
+    # user: "${UID:-0}:${GID:-0}"
+
+    environment:
+      - OMP_PROC_BIND=true
+      - OMP_PLACES=cores
+
+    shm_size: "32g"
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+
+    working_dir: /
+    command: ["/ef5/bin/ef5", "/conf/control.txt"]

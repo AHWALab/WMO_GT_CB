@@ -1,0 +1,8 @@
+# EF5 runtime outputs (regenerate on every run)
+output/*
+!output/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
