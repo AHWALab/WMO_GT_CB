@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Big data files — never commit. Examples and validation should be small PNGs only.
+*.nc
+*.HDF5
+*.hdf5
+# Domain CSGD params are small (~100 KB) and required for the realtime pipeline
+!*.csgdNLWAR_DPR.nc
+*.grib2
+*.idx
+
+# Local outputs and scratch
+extension/realtime/output/
+imerg_tmp/
+gfs_wind_data/
+scratch_*/
+.urs_cookies
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp

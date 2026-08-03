@@ -1,0 +1,79 @@
+# ============================================================================
+# TITO Docker Compose — one-command operational deployment
+# ============================================================================
+# Usage:
+#   docker-compose up -d              # start in background
+#   docker-compose run --rm tito shell  # interactive debug shell
+#   docker-compose run --rm tito hindcast "2025-11-16 00:00" "2025-11-17 20:00"
+# ============================================================================
+
+version: "3.8"
+
+services:
+  tito:
+    image: tito:latest
+    container_name: tito-pipeline
+    restart: "no"
+
+    # ── EF5: mount Docker socket so TITO can spawn EF5 containers ───────
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # ── Persistent data (bind-mount host dirs so states/outputs
+      #     survive container restarts) ──────────────────────────────────
+      - ./states:/app/states:rw
+      - ./outputs:/app/outputs:rw
+      - ./precip:/app/precip:rw
+      - ./precipEF5:/app/precipEF5:rw
+      - ./qpf_store:/app/qpf_store:rw
+      - ./pet:/app/pet:ro
+      - ./basic:/app/basic:ro
+      - ./parameters:/app/parameters:ro
+      - ./templates:/app/templates:ro
+      - ./EF5:/app/EF5:ro
+      # Mount config so edits apply without rebuilding the image
+      - ./Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro
+      - ./orchestrator.py:/app/orchestrator.py:ro
+      - ./hindcast_manager.py:/app/hindcast_manager.py:ro
+      - ./tito_utils:/app/tito_utils:ro
+      - ./STREAM-Sat-realtime:/app/STREAM-Sat-realtime:rw
+      # StormLab-GFS (same tito_env2 interpreter via sys.executable)
+      - ./StormLab-GFS-realtime:/app/StormLab-GFS-realtime:rw
+
+    # ── Environment ────────────────────────────────────────────────────
+    environment:
+      - EF5_RUNTIME=docker                    # force Docker EF5 runtime
+      - EF5_IMAGE=ef5-container:latest        # Docker image name (not SIF)
+      - EF5_OMP_NUM_THREADS=1                 # single-thread EF5
+      # Host abs path for sibling EF5 docker -v mounts (docker.sock resolves on host)
+      - TITO_HOST_PROJECT=${TITO_HOST_PROJECT:-${PWD}}
+      - PYTHONUNBUFFERED=1
+      - TZ=Etc/UTC
+      # StormLab uses the active TITO conda env (tito_env2), not a separate env
+      - STORMLAB_USE_TITO_ENV=1
+
+    # ── Resource limits ────────────────────────────────────────────────
+    # TITO orchestrator + 50 parallel EF5 containers can use substantial
+    # memory.  Adjust based on your server.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 64g
+    #       cpus: "32"
+
+    # ── Network ────────────────────────────────────────────────────────
+    network_mode: host    # EF5 Docker containers need internet for IMERG downloads
+
+    # ── Cron scheduling (use external cron + docker run for hourly runs) ──
+    # For hourly operational mode, add this to crontab:
+    #   7 * * * * cd /path/to/TITO_Stream_Sat && docker-compose run --rm tito operational
+
+  # ── Optional: EF5 builder service ────────────────────────────────────
+  ef5-builder:
+    image: ef5-container:latest
+    build:
+      context: ./EF5/docker
+      dockerfile: Dockerfile
+    container_name: ef5-builder
+    profiles:
+      - build      # only built with: docker-compose --profile build up

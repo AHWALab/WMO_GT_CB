@@ -1,0 +1,32 @@
+feat: implement IMERG-SCaMPR chained simulation pipeline for operational runs
+
+Replace the single-batch QPE+QPF EF5 run with a two-batch sequential chain
+for operational IMERG_SCAMPR mode:
+
+  Run 1 - IMERG only (30-min, T-start to T-4h)
+    - Ends at the latest available IMERG timestamp (T-4h)
+    - Saves hydrological state at T-4h (only state save in the cycle)
+    - Output: tmp_output_{model}_imerg/
+
+  Run 2 - LR GFS and AROME (independently, T to T+24h)
+    - Both start from the IMERG state at T-4h (find_available_states
+      searches backward from T to T-4h)
+    - QPE warm-up task always commented in control file for LR runs
+      (TIME_WARMEND= commented when LR_run=True in write_control_file)
+    - No state save for either LR run
+    - Output: tmp_output_{model}_scampr_gfs/ and tmp_output_{model}_scampr_arome/
+
+Key orchestrator.py changes:
+  - New _prep_imerg_ef5_for_region and _prep_lr_ef5_for_region functions
+  - Dynamic output folder naming: tmp_output_{model}_{qpe}_{qpf} everywhere
+    (legacy/hindcast path also updated)
+  - Removed standalone SCaMPR EF5 run and scampr_ef5_jobs list
+  - Gap-fill IMERG file stripping removed from shared IMERG pre-download block
+  - r_imerg_end (T-4h) and r_scampr_end (T) added to region_configs
+  - Shared SCaMPR download block repurposed for LR QPE precip staging
+  - Execution block guarded by not HindCastMode and IMERG_SCAMPR mode;
+    hindcast path unchanged via legacy _prep_qpf_ef5_for_region
+
+ef5_routines.py change:
+  - TIME_WARMEND= now always commented for LR runs (statesFound or LR_run)
+    so QPE warm-up never executes in SCaMPR+GFS / SCaMPR+AROME control files

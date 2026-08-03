@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+
+# Large binary ML/model files
+*.h5
+*.hdf5
+*.pth
+*.npy
+*.nc
+*.nc4
+# STREAM-Sat CSGD domain params are small and required at runtime
+!STREAM-Sat-realtime/*.csgdNLWAR_DPR.nc
+*.grb
+*.grib
+*.grib2
+*.pkl
+
+# Temporary files
+*.tmp
+*.log
+temp/
+logs/
+STREAM-Sat-realtime/tmp*/
+
+# Raster/binary data files — never commit these (except basic/ and parameters/)
+*.tif
+*.tiff
+*.aux.xml
+!basic/**/*.tif
+!basic/**/*.tiff
+!parameters/**/*.tif
+!parameters/**/*.tiff
+
+# ── Runtime data dirs: keep folder shells via .gitkeep, ignore contents ──
+precip/**
+!precip/.gitkeep
+precipEF5/**
+!precipEF5/.gitkeep
+qpf_store/**
+!qpf_store/.gitkeep
+states/**
+!states/.gitkeep
+outputs/**
+!outputs/.gitkeep
+
+# Docker image archives / partner bundle → host on Zenodo (not GitHub)
+dist/
+*.tar.gz
+
+# Container images (large) — build locally or download from Zenodo
+tito.sif
+EF5/*.sif
+EF5/*.tar
+
+# Nested upstream repo (cloned from github.com/yagderin/StormLab-GFS-realtime)
+StormLab-GFS-realtime/
+
+# STREAM-Sat runtime caches (regenerated each cycle)
+STREAM-Sat-realtime/extension/realtime/state/
+STREAM-Sat-realtime/extension/realtime/output/
+
+# Local scratch / training dumps
+trainings/

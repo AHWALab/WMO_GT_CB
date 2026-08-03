@@ -1,0 +1,11 @@
+# Git Inore File
+# Each 'empty' folder has a .gitkeep file
+
+# VisualStudio Code Files
+.vscode
+
+# Ignore all files in the ./results folder, but keep the folder's structure
+# Each 'empty' folder has a .gitkeep file
+results/*.tif
+results/*.json
+results/*.csv

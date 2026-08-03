@@ -1,0 +1,33 @@
+################################################################################
+# EF5 — Ubuntu/glibc build (for embedding inside TITO; no Alpine/musl nesting)
+################################################################################
+# Produces /ef5/bin/ef5 linked against Ubuntu libs so it can run directly
+# inside the TITO container (Docker or Apptainer) without a nested runtime.
+################################################################################
+FROM ubuntu:22.04 AS ef5-build
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git ca-certificates build-essential automake autoconf libtool pkg-config \
+        libgeotiff-dev libtiff-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+# AHWALab fork (same as Alpine EF5 docker build)
+RUN git clone --depth 1 https://github.com/AHWALab/EF5.git ef5
+WORKDIR /src/ef5
+RUN autoreconf --force --install \
+    && ./configure \
+    && make -j"$(nproc)" CXXFLAGS="-O3 -fopenmp" \
+    && mkdir -p /ef5/bin \
+    && cp -a bin/ef5 /ef5/bin/ef5 \
+    && chmod +x /ef5/bin/ef5
+
+# Slim runtime image (also used as COPY --from source)
+FROM ubuntu:22.04 AS ef5-runtime
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgeotiff5 libtiff5 zlib1g libgomp1 libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ef5-build /ef5 /ef5
+CMD ["/ef5/bin/ef5"]

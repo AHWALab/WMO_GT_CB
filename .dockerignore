@@ -1,0 +1,51 @@
+# ── Large data (bind-mounted at runtime, NOT baked into image) ──
+states/
+outputs/
+precip/
+precipEF5/
+qpf_store/
+pet/
+basic/
+parameters/
+logs/
+__pycache__/
+*.pyc
+tito.sif
+*.sif
+dist/
+apptainer/
+# StormLab runtime products (code/params stay in image; NC output bind-mounted)
+StormLab-GFS-realtime/output/
+StormLab-GFS-realtime/WMO.zip
+StormLab-GFS-realtime/**/__pycache__/
+
+# ── Git / IDE ──
+.git/
+.gitattributes
+.gitignore
+.git_commit_msg.txt
+.vscode/
+.idea/
+
+# ── Docker ──
+Dockerfile
+docker-compose.yml
+docker-build.sh
+.dockerignore
+
+# ── Docs ──
+docs/
+*.md
+!README.md
+
+# ── Legacy / temp ──
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── EF5 SIF (only needed for Apptainer, not Docker mode) ──
+EF5/*.sif
+
+# ── Conda env file is NEEDED for build, do NOT ignore it ──
+# tito_env.yml is copied by the Dockerfile

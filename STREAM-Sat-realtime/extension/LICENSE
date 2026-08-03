@@ -1,0 +1,44 @@
+MIT License
+
+Copyright (c) 2026 Yagmur Derin, University of Iowa
+
+This LICENSE applies only to the files inside the `extension/` directory.
+The upstream STREAM-Sat code at the repository root is unchanged in this
+fork and retains the upstream project's license (see ../LICENSE and the
+upstream repository at https://github.com/KaidiWisc/STREAM-Sat).
+
+---
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+---
+
+Acknowledgements
+----------------
+The extension wraps STREAM-Sat (Hartke et al. 2022; Peng et al. 2025, WRR)
+and is informed by StormLab (Liu, Wright & Lorenz 2024, WRR). Citations:
+
+    Hartke, S. H., Wright, D. B., Li, Z., Maggioni, V., Kirschbaum, D. B.,
+    & Khan, S. (2022). Ensemble Representation of Satellite Precipitation
+    Uncertainty Using a Nonstationary, Anisotropic Autocorrelation Model.
+    Water Resources Research, 58(8). doi:10.1029/2021wr031650
+
+    Peng, K., Wright, D. B., Derin, Y., Hartke, S. H., Li, Z., & Tan, J.
+    (2025). STREAM-Sat: A novel near-realtime quasi-global satellite-only
+    ensemble precipitation. Water Resources Research.

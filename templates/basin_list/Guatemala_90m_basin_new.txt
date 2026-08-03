@@ -1,0 +1,14 @@
+[Gauge 0] cellx=1651 celly=1036 outputts=false #Num Cells = 7675856.000000
+
+[Gauge cuenca_motagua_1] lon=-88.81737012457849 lat=15.453680111710598 outputts=true
+[Gauge cuenca_motagua_2] lon=-88.86961177859104 lat=15.478844228319122 outputts=true
+[Gauge 1] cellx=5525 celly=3462 outputts=false #Num Cells = 1970986.000000
+
+[Gauge cuenca_villalobos_1] lon=-90.53538940419467 lat=14.487845856550752 outputts=true
+[Gauge cuenca_villalobos_2] lon=-90.54195471958475 lat=14.486985694908741 outputts=true
+[Gauge cuenca_villalobos_out] lon=-90.67113695475938 lat=14.412713370268984 outputts=true
+
+[Basin 0]
+gauge=cuenca_motagua_1
+gauge=cuenca_motagua_2
+gauge=1

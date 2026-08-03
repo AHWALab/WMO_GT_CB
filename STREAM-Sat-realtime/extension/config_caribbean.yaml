@@ -1,0 +1,70 @@
+# Real-time STREAM-Sat QPE — Caribbean configuration
+# ====================================================
+# Author:   Yagmur Derin, University of Iowa
+# Created:  2026-04-17
+# License:  MIT (see extension/LICENSE)
+#
+# Domain: Caribbean / Western Atlantic (CSGD grid: 120 lat × 370 lon)
+
+# writes ONE NetCDF per half-hourly timestep:
+# STREAMSat_<region>_<YYYYMMDDTHHmm>_Ens50.nc   (single timestep, 50 members)
+output_dir: extension/realtime/output
+
+# Path to the directory containing STREAM_NoiseGeneration.py and
+# STREAM_PrecipSimulation.py. Leave blank to auto-detect (the repository
+# root, where the upstream master files live).
+streamsat_dir: ""
+
+# REQUIRED: path to a CSGD parameter NetCDF for your target domain.
+# This file is NOT shipped with the repository — train one using
+# https://github.com/KaidiWisc/CSGD_error_model, or obtain it from
+# your project lead.
+csgd_params: "carabbian.csgdNLWAR_DPR.nc"
+
+# Ensemble size (STREAM-Sat noise realizations).
+ensemble_size: 10
+
+# How many hours of IMERG Early to condition on (this is the operational
+# window — the time range that ends up in the output NetCDF).
+window_hours: 48
+
+# How many additional hours of IMERG/GFS to ingest BEFORE the operational
+# window so the AR(1) noise chain has time to reach steady state.
+# Recommended: 12 h (~24 half-hourly steps) — enough for typical α ≈ 0.7–0.9
+# regimes to fully decorrelate the t=0 initialization. Set to 0 to disable
+# warm-up trimming entirely (matches original single-batch convention).
+warmup_hours: 12
+
+# Expected IMERG Early latency in hours;
+imerg_latency_hours: 4
+
+region: caribbean
+
+# Where to save / load cross-run noise state. Leave blank to disable
+# state persistence entirely (each run is fully independent).
+state_dir: extension/realtime/state # cross-run continuity ON
+state_save_hours: 6 # last 6 h of noise saved (default)
+state_max_age_hours: 6 # if state file older than this, cold-start
+
+# STREAM-Sat target (IMERG) grid.
+domain:
+  lat_min: 11.05
+  lat_max: 22.95
+  lon_min: -93.95
+  lon_max: -57.05
+
+# GFS download domain
+gfs_domain:
+  lat_min: 5.0
+  lat_max: 25.0
+  lon_min: -85.0
+  lon_max: -55.0
+
+# Optional: shared archive for GFS 850 hPa wind NetCDFs.
+# When set, run_pipeline checks this folder for pre-downloaded per-hour
+# gfs_wind.*.nc files before attempting any network download.
+# Populate with: python tito_utils/qpf_utils/gfs_wind_downloader.py --auto-out <path>
+gfs_wind_archive_path: "/Dedicated/Humberto/Naman/TITO_Caribbean_Comoros_VM/TITOCaribbeanAndComoros/precip/gfs_winds"
+
+imerg_source: "pps" # switch to PPS (default already)
+imerg_pps_email: "vrobledodelgado@uiowa.edu" # same email as in Caribbean_Comoros_config.py
