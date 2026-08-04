@@ -23,7 +23,7 @@ Thumbs.db
 *.nc
 *.nc4
 # STREAM-Sat CSGD domain params are small and required at runtime
-!STREAM-Sat-realtime/*.csgdNLWAR_DPR.nc
+!tito_utils/qpe_utils/STREAM-Sat-realtime/*.csgdNLWAR_DPR.nc
 *.grb
 *.grib
 *.grib2
@@ -34,26 +34,28 @@ Thumbs.db
 *.log
 temp/
 logs/
-STREAM-Sat-realtime/tmp*/
+tito_utils/qpe_utils/STREAM-Sat-realtime/tmp*/
 
 # Raster/binary data files — never commit these (except basic/ and parameters/)
 *.tif
 *.tiff
 *.aux.xml
-!basic/**/*.tif
-!basic/**/*.tiff
-!parameters/**/*.tif
-!parameters/**/*.tiff
+!EF5_conf/basic/**/*.tif
+!EF5_conf/basic/**/*.tiff
+!EF5_conf/parameters/**/*.tif
+!EF5_conf/parameters/**/*.tiff
+!EF5_conf/pet/**/*.tif
+!EF5_conf/pet/**/*.tiff
 
 # ── Runtime data dirs: keep folder shells via .gitkeep, ignore contents ──
-precip/**
-!precip/.gitkeep
-precipEF5/**
-!precipEF5/.gitkeep
-qpf_store/**
-!qpf_store/.gitkeep
-states/**
-!states/.gitkeep
+EF5_conf/precip/**
+!EF5_conf/precip/.gitkeep
+EF5_conf/precipEF5/**
+!EF5_conf/precipEF5/.gitkeep
+EF5_conf/qpf_store/**
+!EF5_conf/qpf_store/.gitkeep
+EF5_conf/states/**
+!EF5_conf/states/.gitkeep
 outputs/**
 !outputs/.gitkeep
 
@@ -66,16 +68,16 @@ tito.sif
 EF5/*.sif
 EF5/*.tar
 
-# Nested upstream repo (cloned from github.com/yagderin/StormLab-GFS-realtime)
-StormLab-GFS-realtime/WMO.zip
-StormLab-GFS-realtime/output/
-StormLab-GFS-realtime/*/__pycache__/
-StormLab-GFS-realtime/__pycache__/
-!StormLab-GFS-realtime/params/**
+# Nested upstream repo (StormLab under tito_utils/qpf_utils/)
+tito_utils/qpf_utils/StormLab-GFS-realtime/WMO.zip
+tito_utils/qpf_utils/StormLab-GFS-realtime/output/
+tito_utils/qpf_utils/StormLab-GFS-realtime/*/__pycache__/
+tito_utils/qpf_utils/StormLab-GFS-realtime/__pycache__/
+!tito_utils/qpf_utils/StormLab-GFS-realtime/params/**
 
 # STREAM-Sat runtime caches (regenerated each cycle)
-STREAM-Sat-realtime/extension/realtime/state/
-STREAM-Sat-realtime/extension/realtime/output/
+tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/state/
+tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/output/
 
 # Local scratch / training dumps
 trainings/

@@ -12,6 +12,7 @@ import sys
 import argparse
 import time
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, timedelta
 from pathlib import Path
@@ -117,6 +118,7 @@ def rda_info():
 
 
 def download_file(url, outpath, max_retries=3, timeout=60):
+    last_err = None
     for attempt in range(max_retries):
         try:
             r = requests.get(url, timeout=timeout, stream=True)
@@ -129,43 +131,51 @@ def download_file(url, outpath, max_retries=3, timeout=60):
             elif r.status_code == 404:
                 return False  # File doesn't exist, no point retrying
             else:
-                log.warning(f"  HTTP {r.status_code}, retry {attempt+1}/{max_retries}")
+                last_err = f"HTTP {r.status_code}"
+                # Per-retry noise stays at DEBUG (TITO user console filters these)
+                log.debug("  HTTP %s, retry %s/%s", r.status_code, attempt + 1, max_retries)
         except requests.exceptions.RequestException as e:
-            log.warning(f"  Error: {e}, retry {attempt+1}/{max_retries}")
+            last_err = str(e)
+            log.debug("  download error (retry %s/%s): %s", attempt + 1, max_retries, e)
         time.sleep(2 ** attempt)  # exponential backoff
+    if last_err:
+        log.debug("  download failed after %s tries: %s", max_retries, last_err)
     return False
 
 
 def download_gfs_grib(dt, cycle_hr, fxx, outpath):
     if outpath.exists() and outpath.stat().st_size > 100:
-        log.info(f"  [cached] {outpath.name}")
+        log.debug("  [cached] %s", outpath.name)
         return True
 
     # 1. Try AWS S3 (full file, fast and reliable)
     url = aws_url(dt, cycle_hr, fxx)
-    log.info(f"  Trying AWS... {dt.strftime('%Y%m%d')} {cycle_hr:02d}Z f{fxx:03d}")
+    log.debug("  Trying AWS... %s %02dZ f%03d", dt.strftime("%Y%m%d"), cycle_hr, fxx)
     if download_file(url, outpath, timeout=120):
         size_kb = outpath.stat().st_size / 1024
-        log.info(f"  [AWS] {size_kb:.0f} KB")
+        log.debug("  [AWS] %.0f KB", size_kb)
         return True
 
     # 2. Try NOMADS GRIB filter (tiny download, server-side subset)
     url = nomads_grib_filter_url(dt, cycle_hr, fxx, **DOMAIN)
-    log.info(f"  AWS unavailable, trying NOMADS...")
+    log.debug("  AWS unavailable, trying NOMADS...")
     if download_file(url, outpath):
         size_kb = outpath.stat().st_size / 1024
-        log.info(f"  [NOMADS] {size_kb:.0f} KB")
+        log.debug("  [NOMADS] %.0f KB", size_kb)
         return True
 
     # 3. Try Google Cloud Storage
     url = gcs_url(dt, cycle_hr, fxx)
-    log.info(f"  NOMADS unavailable, trying Google Cloud...")
+    log.debug("  NOMADS unavailable, trying Google Cloud...")
     if download_file(url, outpath, timeout=120):
         size_kb = outpath.stat().st_size / 1024
-        log.info(f"  [GCS] {size_kb:.0f} KB")
+        log.debug("  [GCS] %.0f KB", size_kb)
         return True
 
-    log.error(f"  FAILED: Could not download {dt.strftime('%Y%m%d')} {cycle_hr:02d}Z f{fxx:03d}")
+    log.debug(
+        "  FAILED: Could not download %s %02dZ f%03d",
+        dt.strftime("%Y%m%d"), cycle_hr, fxx,
+    )
     return False
 
 def read_grib_uv850(grib_path, is_subsetted=True):
@@ -330,11 +340,16 @@ def process_event(event_key, event_cfg, max_workers=6):
             seen_times[vt] = item
 
     download_list = sorted(seen_times.values(), key=lambda x: x["valid_time"])
-    log.info(f"Files to download: {len(download_list)}")
+    n_total = len(download_list)
+    log.info(f"Files to download: {n_total}")
 
     # ---- Step 2: Download GRIB files (parallel) ----
-    log.info(f"\nDownloading GFS 850 hPa U/V wind data ({max_workers} workers)...")
+    log.info(f"Downloading GFS 850 hPa U/V wind data ({max_workers} workers)...")
     failed = []
+    done = 0
+    ok_n = 0
+    # Single-line progress token for TITO console filter (GFS progress: N/M ...)
+    _prog_lock = threading.Lock()
 
     def _download_item(item):
         """Download a single GRIB file — thread-safe worker."""
@@ -346,21 +361,25 @@ def process_event(event_key, event_cfg, max_workers=6):
         futures = {executor.submit(_download_item, item): item for item in download_list}
         for future in as_completed(futures):
             item, ok = future.result()
-            if not ok:
-                failed.append(item)
+            with _prog_lock:
+                done += 1
+                if ok:
+                    ok_n += 1
+                else:
+                    failed.append(item)
+                # Emit compact progress every file (TITO rewrites one console line)
+                log.info(
+                    "GFS progress: %s/%s (ok=%s fail=%s)",
+                    done, n_total, ok_n, len(failed),
+                )
 
     if failed:
-        log.warning(f"\n{len(failed)} files failed to download.")
-        log.warning("These valid times will have NaN wind values:")
-        for item in failed[:5]:
-            log.warning(f"  {item['valid_time']}")
-        if len(failed) > 5:
-            log.warning(f"  ... and {len(failed)-5} more")
-        log.info(f"\nAlternative data source:")
-        log.info(rda_info())
-
+        log.warning("%s/%s GFS wind files failed to download.", len(failed), n_total)
+        log.debug("Failed valid times (first 5): %s",
+                  [str(x["valid_time"]) for x in failed[:5]])
         if len(failed) == len(download_list):
-            log.error("ALL downloads failed. Please try the RDA source above.")
+            log.error("ALL GFS wind downloads failed (network/DNS?). Check connectivity.")
+            log.debug("Alternative data source:\n%s", rda_info())
             return None
 
     # ---- Step 3: Read GRIB files and extract U/V at 850 hPa ----

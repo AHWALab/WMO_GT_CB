@@ -813,10 +813,11 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
     if runtime == "local":
         # Run EF5 binary inside the *current* TITO container/process tree.
         # No nested Docker/Apptainer — this is the Apptainer partner path.
+        # stderr→log hides libgomp / TIFF codec noise from the console.
         ef5_bin = _resolve_local_ef5_bin(ef5Path)
         cmd = (
             f"OMP_NUM_THREADS={omp_threads} OMP_DYNAMIC=false "
-            f"OMP_NESTED=false OMP_THREAD_LIMIT=1 "
+            f"OMP_NESTED=false OMP_THREAD_LIMIT=1 OMP_PROC_BIND=false "
             f'"{ef5_bin}" "{control_rel}" '
             f'> "{log_abs}" 2>&1'
         )
@@ -827,6 +828,8 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
         # volume paths are resolved on the *host*.  cwd inside the TITO
         # container is typically /app, which is not the host project path.
         # tito-run.sh / compose must set TITO_HOST_PROJECT to the host abs path.
+        # OMP_PROC_BIND=false avoids "libgomp: Affinity not supported" spam.
+        # stderr redirected to log (2>&1) so TIFF codec warnings stay off console.
         host_project = os.environ.get("TITO_HOST_PROJECT", "").strip() or cwd
         cmd = (
             f"docker run --rm "
@@ -840,12 +843,12 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
             f'-v "{host_project}:/data:rw" '
             f'-u "$(id -u):$(id -g)" '
             f"-e OMP_NUM_THREADS={omp_threads} "
-            f"-e OMP_PROC_BIND=true "
-            f"-e OMP_PLACES=cores "
+            f"-e OMP_PROC_BIND=false "
+            f"-e OMP_DYNAMIC=false "
             f"-w /data "
             f'"{ef5Path}" '
             f'/ef5/bin/ef5 "/data/{control_rel}" '
-            f'> "{log_abs}"'
+            f'> "{log_abs}" 2>&1'
         )
         return subprocess.call(cmd, shell=True)
 
@@ -972,7 +975,7 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
     subdomain, systemModel, templatePath, template, systemStartLRTime,
     systemWarmEndTime, systemStateEndTime, systemEndTime, LR_TimeStep, LR_run,
     region_name, model_resolution, basicPath, parametersPath, qpe_source="IMERG", qpf_source="GFS",
-    stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="qpf_store/",
+    stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="EF5_conf/qpf_store/",
     save_states=True, cold_start_begin_time=None, cold_start_warm_end_time=None,
     imerg_download_params=None, verbose=True, run_log=None):
     """Prepare EF5 control file and stage precipitation.

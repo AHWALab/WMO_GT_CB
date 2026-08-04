@@ -20,7 +20,7 @@ State chaining by QPE experiment
 ---------------------------------
 The timestamp of saved states depends on ``hindcast_qpe_experiment``:
 
-  IMERG_ONLY / IMERG_NOWCAST
+  IMERG_ONLY
       States saved at  T − 4 h  (IMERG latency offset).
       For a run at T = 09:00, states are written at 05:00.
       The *next* run (T = 10:00) sets warm_end = 06:00 and searches back

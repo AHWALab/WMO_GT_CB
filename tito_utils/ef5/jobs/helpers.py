@@ -78,3 +78,44 @@ def resolve_region_resolution(
     if isinstance(region_resolution_map, dict):
         return region_resolution_map.get(region_name, model_resolution)
     return model_resolution
+
+
+def region_path_key(region_name: str, model_resolution: str) -> str:
+    """Folder segment for states/outputs: ``guatemala_900m``."""
+    return f"{str(region_name).lower()}_{str(model_resolution).strip()}"
+
+
+def resolve_control_template(
+    template_path: str,
+    region_name: str,
+    model_resolution: str,
+    region_template_map=None,
+    default_template: str = "ef5_Antigua_control_template.txt",
+) -> str:
+    """
+    Pick EF5 control template for a region + resolution.
+
+    Priority:
+      1. ``region_template_map[region]`` if set and the file exists
+      2. ``ef5_{Region}_{resolution}_control_template.txt`` if present
+      3. ``ef5_{Region}_control_template.txt`` if present
+      4. ``default_template``
+    """
+    if isinstance(region_template_map, dict):
+        override = region_template_map.get(region_name)
+        if override:
+            override_path = os.path.join(template_path, override)
+            if os.path.isfile(override_path):
+                return override
+
+    res = str(model_resolution or "").strip()
+    candidates = []
+    if res:
+        candidates.append(f"ef5_{region_name}_{res}_control_template.txt")
+    candidates.append(f"ef5_{region_name}_control_template.txt")
+
+    for name in candidates:
+        if os.path.isfile(os.path.join(template_path, name)):
+            return name
+
+    return default_template

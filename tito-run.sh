@@ -74,8 +74,9 @@ echo "==== TITO launcher ===="
 echo "  Runtime : $RUNTIME"
 echo "  Project : $SCRIPT_DIR"
 
+# EF5_conf holds basic/parameters/pet/templates/states/precip/precipEF5/qpf_store
 DATA_MOUNTS=(
-    states outputs precip precipEF5 qpf_store pet basic parameters templates
+    EF5_conf outputs
 )
 
 # ── Docker ─────────────────────────────────────────────────────────────────
@@ -85,13 +86,16 @@ run_docker() {
         mkdir -p "$SCRIPT_DIR/$d"
         args+=(-v "$SCRIPT_DIR/$d:/app/$d")
     done
+    # Ensure EF5_conf subdirs exist on host
+    for d in basic parameters pet templates states precip precipEF5 qpf_store; do
+        mkdir -p "$SCRIPT_DIR/EF5_conf/$d"
+    done
     args+=(
         -v "$SCRIPT_DIR/Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro"
         -v "$SCRIPT_DIR/orchestrator.py:/app/orchestrator.py:ro"
         -v "$SCRIPT_DIR/hindcast_manager.py:/app/hindcast_manager.py:ro"
-        -v "$SCRIPT_DIR/tito_utils:/app/tito_utils:ro"
-        -v "$SCRIPT_DIR/STREAM-Sat-realtime:/app/STREAM-Sat-realtime:rw"
-        -v "$SCRIPT_DIR/StormLab-GFS-realtime:/app/StormLab-GFS-realtime:rw"
+        # tito_utils includes STREAM-Sat (qpe_utils/) and StormLab (qpf_utils/)
+        -v "$SCRIPT_DIR/tito_utils:/app/tito_utils:rw"
         -v "$SCRIPT_DIR/EF5:/app/EF5:ro"
         -v /var/run/docker.sock:/var/run/docker.sock
         -e EF5_RUNTIME=docker
@@ -130,13 +134,14 @@ run_apptainer() {
         mkdir -p "$SCRIPT_DIR/$d"
         binds+=(--bind "$SCRIPT_DIR/$d:/app/$d")
     done
+    for d in basic parameters pet templates states precip precipEF5 qpf_store; do
+        mkdir -p "$SCRIPT_DIR/EF5_conf/$d"
+    done
     binds+=(
         --bind "$SCRIPT_DIR/Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro"
         --bind "$SCRIPT_DIR/orchestrator.py:/app/orchestrator.py:ro"
         --bind "$SCRIPT_DIR/hindcast_manager.py:/app/hindcast_manager.py:ro"
-        --bind "$SCRIPT_DIR/tito_utils:/app/tito_utils:ro"
-        --bind "$SCRIPT_DIR/STREAM-Sat-realtime:/app/STREAM-Sat-realtime"
-        --bind "$SCRIPT_DIR/StormLab-GFS-realtime:/app/StormLab-GFS-realtime"
+        --bind "$SCRIPT_DIR/tito_utils:/app/tito_utils"
         --bind "$SCRIPT_DIR/EF5:/app/EF5:ro"
     )
 

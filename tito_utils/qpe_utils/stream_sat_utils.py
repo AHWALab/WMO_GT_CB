@@ -43,7 +43,8 @@ from osgeo import gdal, osr
 log = logging.getLogger("streamsat-utils")
 
 # ── Paths ────────────────────────────────────────────────────────────────
-STREAMSAT_REPO = Path(__file__).resolve().parent.parent.parent / "STREAM-Sat-realtime"
+# STREAM-Sat lives next to this module under tito_utils/qpe_utils/
+STREAMSAT_REPO = Path(__file__).resolve().parent / "STREAM-Sat-realtime"
 STREAMSAT_SCRIPT = STREAMSAT_REPO / "extension" / "realtime" / "run_pipeline.py"
 
 # Config files per domain
@@ -169,38 +170,102 @@ def run_streamsat_pipeline(
     if keep_scratch:
         cmd.append("--keep-scratch")
 
+    from tito_utils.logging_utils import (
+        debug_print, filter_streamsat_line, is_debug, is_user,
+        progress_done, progress_line, user_print,
+    )
+
     log.info("[STREAM-Sat %s] Running: %s", domain, " ".join(cmd))
-    print(f"    [STREAM-Sat {domain}] cmd: {' '.join(cmd)}")
+    if is_debug():
+        print(f"    [STREAM-Sat {domain}] cmd: {' '.join(cmd)}")
+    else:
+        user_print(f"    STREAM-Sat [{domain}]: starting ensemble={ensemble_size} …")
     if pipeline_log:
         pipeline_log.info("[STREAM-Sat %s] cmd: %s", domain, " ".join(cmd))
     t0 = time.time()
 
-    cp = subprocess.run(
-        cmd,
-        cwd=str(STREAMSAT_REPO),
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
+    # Stream stdout+stderr live so operators see IMERG/GFS/Semi-Lagrangian progress.
+    # Full combined output is also written to pipeline_log.
+    combined_chunks: List[str] = []
+    sl_seen = 0
+    in_progress = False
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(STREAMSAT_REPO),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        deadline = t0 + float(timeout_seconds)
+        while True:
+            if time.time() > deadline:
+                proc.kill()
+                raise subprocess.TimeoutExpired(cmd, timeout_seconds)
+            line = proc.stdout.readline()
+            if line == "" and proc.poll() is not None:
+                break
+            if not line:
+                time.sleep(0.05)
+                continue
+            combined_chunks.append(line)
+            # Console filter
+            if "Running Semi-Lagrangian Scheme" in line:
+                if in_progress:
+                    progress_done()
+                    in_progress = False
+                sl_seen += 1
+                user_print(
+                    f"    Running Semi-Lagrangian Scheme "
+                    f"(member {min(sl_seen, ensemble_size)}/{ensemble_size}) …"
+                )
+                continue
+            shown = filter_streamsat_line(line)
+            if shown is not None:
+                # Avoid double-printing Semi-Lagrangian (handled above)
+                if "Semi-Lagrangian" in shown:
+                    continue
+                # In-place progress lines (GFS winds / IMERG counters)
+                if shown.startswith("\r"):
+                    progress_line(shown.lstrip("\r"))
+                    in_progress = True
+                    continue
+                if in_progress:
+                    progress_done()
+                    in_progress = False
+                print(shown, flush=True)
+            elif is_debug():
+                if in_progress:
+                    progress_done()
+                    in_progress = False
+                debug_print(line.rstrip("\n"))
+        if in_progress:
+            progress_done()
+            in_progress = False
+        rc = proc.wait(timeout=max(1, int(deadline - time.time())))
+    except subprocess.TimeoutExpired:
+        raise
+    except Exception:
+        raise
 
     elapsed = time.time() - t0
+    combined = "".join(combined_chunks)
 
-    # Write STREAM-Sat stdout/stderr to pipeline log
     if pipeline_log:
-        if cp.stdout:
-            pipeline_log.info("[STREAM-Sat %s] STDOUT:\n%s", domain, cp.stdout)
-        if cp.stderr:
-            pipeline_log.info("[STREAM-Sat %s] STDERR:\n%s", domain, cp.stderr)
+        if combined:
+            pipeline_log.info("[STREAM-Sat %s] OUTPUT:\n%s", domain, combined[-50000:])
         pipeline_log.info("[STREAM-Sat %s] elapsed: %.1fs", domain, elapsed)
 
-    if cp.returncode != 0:
-        log.error("[STREAM-Sat %s] Failed (rc=%d) in %.1fs", domain, cp.returncode, elapsed)
-        log.error("[STREAM-Sat %s] STDOUT: %s", domain, cp.stdout[-2000:])
-        log.error("[STREAM-Sat %s] STDERR: %s", domain, cp.stderr[-2000:])
+    if rc != 0:
+        log.error("[STREAM-Sat %s] Failed (rc=%d) in %.1fs", domain, rc, elapsed)
+        log.error("[STREAM-Sat %s] OUTPUT tail: %s", domain, combined[-2000:])
         raise RuntimeError(
-            f"STREAM-Sat pipeline failed for {domain} (exit {cp.returncode})"
+            f"STREAM-Sat pipeline failed for {domain} (exit {rc})"
         )
 
+    user_print(f"    STREAM-Sat [{domain}]: completed in {elapsed:.0f}s")
     log.info("[STREAM-Sat %s] Completed in %.1fs", domain, elapsed)
 
     # Determine which output directory got the fresh NC files

@@ -1,13 +1,12 @@
-"""QPF utilities (GFS, AROME, WRF, optional ConvLSTM nowcast).
+"""QPF utilities (GFS, AROME, WRF, StormLab).
 
 Heavy modules are imported lazily via ``__getattr__`` so importing
-``GFS_searcher`` does not pull PySTEPS / ConvLSTM.
+``GFS_searcher`` does not pull unnecessary dependencies.
 """
 
 from __future__ import annotations
 
 __all__ = [
-    "run_convlstm",
     "download_GFS",
     "GFS_searcher",
     "GFS_wind_searcher",
@@ -20,7 +19,6 @@ __all__ = [
 ]
 
 _LAZY = {
-    "run_convlstm": (".nowcast_convlstm", "run_convlstm"),
     "download_GFS": (".gfs_downloader", "download_GFS"),  # legacy v1 CLI API
     "GFS_searcher": (".gfs_manager", "GFS_searcher"),
     "GFS_wind_searcher": (".gfs_manager", "GFS_wind_searcher"),

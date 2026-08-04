@@ -177,9 +177,11 @@ if $PARTNER_BUNDLE; then
     fi
 
     # Empty data dirs partners must populate / mount
-    for d in states outputs precip precipEF5 qpf_store pet basic parameters; do
-        mkdir -p "$DIST/$d"
-        touch "$DIST/$d/.gitkeep"
+    mkdir -p "$DIST/outputs"
+    touch "$DIST/outputs/.gitkeep"
+    for d in basic parameters pet templates states precip precipEF5 qpf_store; do
+        mkdir -p "$DIST/EF5_conf/$d"
+        touch "$DIST/EF5_conf/$d/.gitkeep"
     done
 
     cat > "$DIST/README_PARTNER.txt" <<'EOF'
@@ -197,7 +199,7 @@ A) Partner HAS Docker
        gunzip -c docker-images/ef5-container_latest.tar.gz | docker load
 
   2. Put your DEM/params/PET into:
-       basic/  parameters/  pet/  templates/
+       EF5_conf/basic/  EF5_conf/parameters/  EF5_conf/pet/  EF5_conf/templates/
 
   3. Run:
        ./tito-run.sh operational --regions Guatemala
@@ -211,7 +213,8 @@ B) Partner has NO Docker (HPC / Apptainer only)  ← like Argon
        tito.sif
        EF5/bin/ef5          # glibc binary (NO nested Apptainer)
 
-  2. Put DEM/params/PET into basic/ parameters/ pet/ templates/
+  2. Put DEM/params/PET into:
+       EF5_conf/basic/  EF5_conf/parameters/  EF5_conf/pet/  EF5_conf/templates/
 
   3. Run:
        TITO_RUNTIME=apptainer ./tito-run.sh operational --regions Guatemala
@@ -222,7 +225,8 @@ B) Partner has NO Docker (HPC / Apptainer only)  ← like Argon
 ------------------------------------------------
 C) What gets mounted (writable outputs)
 ------------------------------------------------
-  states/  outputs/  precip/  precipEF5/  qpf_store/
+  EF5_conf/  (basic, parameters, pet, templates, states, precip, precipEF5, qpf_store)
+  outputs/
 
 Edit Caribbean_Comoros_config.py for regions, ensemble size, credentials.
 
@@ -256,5 +260,7 @@ echo "  Partner build (recommended on Docker host):"
 echo "    ./container-build.sh --partner"
 echo ""
 echo "  Run anywhere:"
-echo "    ./tito-run.sh operational --regions Guatemala"
-echo ""
+echo "      TITO_RUNTIME=docker     ./tito-run.sh operational --regions Guatemala"
+echo "      TITO_RUNTIME=apptainer  ./tito-run.sh operational --regions Guatemala"
+
+

@@ -45,8 +45,7 @@ TITO Integration:
 -----------------
 TITO (Threading Inputs to Outputs) uses this module to:
 1. Retrieve observed precipitation for initialization of hydrologic models
-2. Fill gaps in precipitation records using nowcast backup data
-3. Provide 30-minute accumulated precipitation inputs for EF5 hydrologic model
+2. Provide 30-minute accumulated precipitation inputs for EF5 hydrologic model
 
 Called by: TITO orchestrator during the precipitation preparation phase
 Function: get_new_precip() - Main entry point for TITO
@@ -59,7 +58,6 @@ Parameters expected from TITO:
   - email: NASA GPM authentication email
   - xmin/ymin/xmax/ymax: Domain bounding box in degrees
   - HindCastMode: Boolean for historical data retrieval
-  - qpf_store_path: Backup directory for gap-filling with nowcast data
 
 Required Packages:
 ------------------
@@ -106,7 +104,6 @@ Notes:
 ------
 - Handles version transitions (V07B to V07C cutoff around March 2026)
 - Automatically clips to domain boundaries
-- Falls back to nowcast data from qpf_store_path if IMERG is unavailable
 - Uses thread-safe processing with unique temp files per region
 ================================================================================
 """
@@ -207,12 +204,17 @@ def _imerg_one_timestep(
         WriteGrid(gridOutName, NewGrid, nx, ny, gt, proj)
         return "ok"
     except Exception as e:
-        msg = f"    ERROR downloading {filename}: {e}"
-        if print_lock:
-            with print_lock:
-                print(msg)
-        else:
-            print(msg)
+        try:
+            from tito_utils.logging_utils import debug_print, is_debug
+            if is_debug():
+                msg = f"    ERROR downloading {filename}: {e}"
+                if print_lock:
+                    with print_lock:
+                        debug_print(msg)
+                else:
+                    debug_print(msg)
+        except Exception:
+            pass
         return "error"
     finally:
         try:
@@ -251,10 +253,14 @@ def get_gpm_files(
     final_date = final_timestamp + timedelta(minutes=30)
     delta_time = datetime.timedelta(minutes=30)
 
-    print(f"    Checking server for available files...")
+    from tito_utils.logging_utils import (
+        debug_print, is_debug, is_user, progress_done, progress_line, user_print,
+    )
+
+    user_print("    Checking server for available files...")
     available_files = _get_available_files_for_range(
         server, email_gpm, initial_timestamp, final_date, HindCastMode)
-    print(f"    Found {len(available_files)} files available on server")
+    user_print(f"    Found {len(available_files)} files available on server")
 
     # Build list of 30-min timesteps to fetch
     timesteps = []
@@ -272,8 +278,7 @@ def get_gpm_files(
     max_workers = max(1, int(max_workers))
 
     n_total = len(timesteps)
-    print(f"    IMERG parallel download: {n_total} timesteps, "
-          f"workers={max_workers}")
+    user_print(f"    IMERG download: {n_total} timesteps, workers={max_workers}")
 
     downloaded_count = 0
     skipped_count = 0
@@ -281,6 +286,26 @@ def get_gpm_files(
     error_count = 0
     print_lock = threading.Lock()
     done = 0
+    import sys as _sys
+    _tty = bool(getattr(_sys.stdout, "isatty", lambda: False)())
+    # TTY user mode: rewrite one line continuously.
+    # Log files / non-TTY: update ~ every 5% so files stay readable.
+    _pct_step = max(1, n_total // 20) if n_total else 1
+    _last_logged = [0]
+
+    def _emit_progress(force=False):
+        if n_total <= 0:
+            return
+        msg = (f"    IMERG progress: {done}/{n_total} "
+               f"(new={downloaded_count} exist={exists_count} "
+               f"skip={skipped_count} err={error_count})")
+        if is_user() and _tty:
+            progress_line(msg)
+            return
+        # non-TTY or debug: sparse lines
+        if force or done == n_total or (done - _last_logged[0]) >= _pct_step:
+            _last_logged[0] = done
+            print(msg, flush=True)
 
     def _work(ts):
         return _imerg_one_timestep(
@@ -290,8 +315,8 @@ def get_gpm_files(
         )
 
     if max_workers == 1:
-        results = [_work(ts) for ts in timesteps]
-        for st in results:
+        for ts in timesteps:
+            st = _work(ts)
             done += 1
             if st == "ok":
                 downloaded_count += 1
@@ -301,33 +326,28 @@ def get_gpm_files(
                 skipped_count += 1
             else:
                 error_count += 1
-            if done % 50 == 0 or done == n_total:
-                print(f"    IMERG progress: {done}/{n_total} "
-                      f"(new={downloaded_count} exist={exists_count} "
-                      f"skip={skipped_count} err={error_count})")
+            _emit_progress()
     else:
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futs = {ex.submit(_work, ts): ts for ts in timesteps}
             for fut in as_completed(futs):
                 st = fut.result()
-                done += 1
-                if st == "ok":
-                    downloaded_count += 1
-                elif st == "exists":
-                    exists_count += 1
-                elif st == "missing":
-                    skipped_count += 1
-                else:
-                    error_count += 1
-                if done % 50 == 0 or done == n_total:
-                    with print_lock:
-                        print(f"    IMERG progress: {done}/{n_total} "
-                              f"(new={downloaded_count} exist={exists_count} "
-                              f"skip={skipped_count} err={error_count})")
+                with print_lock:
+                    done += 1
+                    if st == "ok":
+                        downloaded_count += 1
+                    elif st == "exists":
+                        exists_count += 1
+                    elif st == "missing":
+                        skipped_count += 1
+                    else:
+                        error_count += 1
+                    _emit_progress()
 
-    print(f"    Download complete: {downloaded_count} downloaded, "
-          f"{exists_count} already present, "
-          f"{skipped_count} skipped/missing, {error_count} errors")
+    final = (f"    IMERG complete: {downloaded_count} new, "
+             f"{exists_count} existing, {skipped_count} missing, "
+             f"{error_count} errors")
+    progress_done(final)
 
 
 def _get_available_files_for_range(server, email_gpm, start_date, end_date, HindCastMode):
@@ -437,163 +457,4 @@ def processIMERG(local_filename,llx, lly ,urx, ury):
     NewGrid = NewGrid*0.1
     return NewGrid, nx, ny, gt, proj
 
-def get_new_precip(current_timestamp, ppt_server_path, precipFolder, email, HindCastMode, qpf_store_path, xmin, ymin, xmax, ymax):
-    """Function that brings latest IMERG precipitation file into the GeoTIFF precip folder
-
-    Arguments:
-        current_timestamp {datetime} -- current time step's timestamp
-        netcdf_feed_path {str} -- path to the geoTIFF precip data feed --- el httml
-        geotiff_precip_path {str} -- path to the GeoTIFF precip archive -- el folder precip 
-
-    Returns:
-        ahead {bool} -- Returns True if the latest GeoTIFF timestamp is agead of the current time step
-        gap {bool} -- Returns True if there is a gap larger than 30min between the latest GeoTIFF timestamp and the current time step
-        exists {bool} -- Returns True there is a GeoTIFF file in the archive for the current time step
-    """
-    #Look for the most recent file in precip folder
-    #Obtainign the latest time step in the folder
-    current_timestamp = to_naive_utc(current_timestamp)
-    files_folder = os.listdir(precipFolder)
-    tif_files = [f for f in files_folder if "qpe" in f]
-    
-    #the first hour of nowcast files will be current time - 3.5h
-    nowcast_older = current_timestamp - timedelta(hours = 3.5) #This is the first nowcast file to be created 
-    
-    if tif_files:
-        print("    There are IMERG files in the precip folder")
-        # Extract the most recent date from files
-        latest_date = max(tif_files, key=lambda x: datetime.datetime.strptime(x[10:22], '%Y%m%d%H%M')) #to improve 
-        formatted_latest_pptfile = datetime.datetime.strptime(latest_date[10:22], '%Y%m%d%H%M') #last file on imerg precip
-        #if the latest imerg file in folder corresponds to the older nowcast file (current time - 4h)
-        if formatted_latest_pptfile < nowcast_older:
-            # and if the time difference betwen the current timestep and the latest imerg in folder is less than 30 min.
-            if nowcast_older - formatted_latest_pptfile <= timedelta(minutes=60):
-                print(f"    There are less than 60 min between last imerg file available on folder: {formatted_latest_pptfile} and last imerg file on server: ", nowcast_older-timedelta(minutes=30))
-                #List the missing dates between lastest ppt file and current timestep -4h
-                missing_dates = []
-                # Iterar desde la fecha del archivo más reciente hasta el timestamp actual en intervalos de 30 minutos
-                next_timestamp = formatted_latest_pptfile + timedelta(minutes=30)
-                while next_timestamp < nowcast_older:
-                    missing_dates.append(next_timestamp)
-                    next_timestamp += timedelta(minutes=30)
-                for date in missing_dates:
-                    #Verifying if missing dates are on the GPM server.
-                    server_files = retrieve_imerg_files(ppt_server_path, email, HindCastMode, date)
-                    timestamps = [to_naive_utc(extract_timestamp(file)) for file in server_files]
-                    if date in timestamps:
-                        print("    Downloading the last file of precip data")
-                        #downloading the file 
-                        date_server = date - timedelta(minutes=30)
-                        nowcast_older_server = nowcast_older - timedelta(minutes=60) #this is because get imerg files sums up 30 min
-                        get_gpm_files(precipFolder, date_server, nowcast_older_server, ppt_server_path, email, xmin, ymin, xmax, ymax)
-                    else:
-                        print("    The file required is not available on the IMERG server.")
-                        print("    Copying the corresponding file from nowcast store folder")
-                        formatted_date = date.strftime('%Y%m%d%H%M')
-                        # Look for the filename in qpf store that cointains the 'formatted_timestamp' missing
-                        for filename in os.listdir(qpf_store_path):
-                            if formatted_date in filename:
-                                source_file = os.path.join(qpf_store_path, filename)
-                                destination_file = os.path.join(precipFolder, filename)
-                                # Copiar el archivo al directorio de destino
-                                shutil.copy2(source_file, destination_file)
-                                print(f"    File '{filename}' was copied in '{precipFolder}'")
-                            else:   
-                                break                          
-            else: 
-                print(f"    There's more than a 60 min gap between latency Imerg: {nowcast_older-timedelta(minutes=30)} and the latest geoTIFF file {formatted_latest_pptfile}")
-                print("    Latest Geotiff file available in folder:", formatted_latest_pptfile)
-                print("    Last IMERG file to download:", nowcast_older - timedelta(minutes=30))
-                #Downloading imerg files between dates
-                nowcast_older_server = nowcast_older - timedelta(minutes=60)
-                latest_pptfile = formatted_latest_pptfile
-                get_gpm_files(precipFolder, latest_pptfile, nowcast_older_server, ppt_server_path, email, xmin, ymin, xmax, ymax)
-                
-                #List the missing dates between latest ppt file and current timestep
-                missing_dates = []
-                next_timestamp = formatted_latest_pptfile + timedelta(minutes=30)
-                while next_timestamp < nowcast_older:
-                    missing_dates.append(next_timestamp)
-                    next_timestamp += timedelta(minutes=30)
-               
-                for date in missing_dates: 
-                    #retrieven file names from GPM server
-                    server_files = retrieve_imerg_files(ppt_server_path, email, HindCastMode, date)    
-                    timestamps = [to_naive_utc(extract_timestamp(file)) for file in server_files]
-                    
-                    #Looking for timestaps missing in imerg
-                    if date not in timestamps:
-                        print(f"    File {date} is missing")
-                        print("    Copying the corresponding file from nowcast store folder")
-                        formatted_date = date.strftime('%Y%m%d%H%M')
-                        # Copying missing file from qpf store folder 
-                        for filename in os.listdir(qpf_store_path):
-                            if formatted_date in filename:
-                                source_file = os.path.join(qpf_store_path, filename)
-                                destination_file = os.path.join(precipFolder, filename)
-                                # Copying file to precip folder
-                                shutil.copy2(source_file, destination_file)
-                                print(f"    File '{filename}' was copied in '{precipFolder}'")
-                            else:
-                                break
-                    #if date is in timestaps, file is available.    
-    else:
-        print("    No '.tif' files found in the precip folder.") 
-        #If there is no files in folder, Download the entire chuck of dates 
-        #from failtime (current time - 6h) to Nowcast time (current time -4h) 
-        initial_time = current_timestamp - timedelta(hours = 9.5)
-        #Downloading imerg Files
-        nowcast_older_server = nowcast_older - timedelta(minutes=60)
-        initial_time_server = initial_time - timedelta(minutes=30)
-        print("    Last IMERG file to download:", nowcast_older- timedelta(minutes=30))
-        print("    Initial time to download:", initial_time)
-        get_gpm_files(precipFolder, initial_time_server, nowcast_older_server, ppt_server_path, email, xmin, ymin, xmax, ymax)
-        #if some file is missing
-        missing_dates = []
-        next_timestamp = initial_time + timedelta(minutes=30)
-
-        #retrieving gpm files for the last file that it is supposed to be downloaded.
-        date_in_server = nowcast_older- timedelta(minutes=30)
-        server_files = retrieve_imerg_files(ppt_server_path, email, HindCastMode, date_in_server)
-
-        while next_timestamp < nowcast_older:
-            missing_dates.append(next_timestamp)
-            next_timestamp += timedelta(minutes=30)
-            
-            for date in missing_dates:     
-                timestamps = [to_naive_utc(extract_timestamp(file)) for file in server_files]
-                
-                if date not in timestamps:
-                    print(f"    File {date} is missing")
-                    print("    Copying the corresponding file from nowcast store folder")
-                    formatted_date = date.strftime('%Y%m%d%H%M')
-                    for filename in os.listdir(qpf_store_path):
-                        if formatted_date in filename:
-                            source_file = os.path.join(qpf_store_path, filename)
-                            destination_file = os.path.join(precipFolder, filename)
-                            # Copying file to precip folder
-                            shutil.copy2(source_file, destination_file)
-                            print(f"    File '{filename}' was copied in '{precipFolder}'")
-                        else:
-                            break
-                    """
-                    print(f"   There is no file in qpf store with date: '{formatted_date}'") ### TO DO
-                    tif_files = glob.glob(os.path.join(precipFolder, "imerg.qpe.*.30minAccum.tif"))
-                    if tif_files:
-                        # Find the most recent file
-                        latest_file = max(tif_files, key=extract_datetime_from_filename)
-                        print(f"    Latest file: {latest_file}")
-                        new_filename = os.path.join(precipFolder, f"imerg.qpe.{formatted_date}.30minAccum.tif")
-                        shutil.copy2(latest_file, new_filename)
-                        print(f"    Created duplicate file: {new_filename}")
-                    else:
-                        print("    No .tif files found in precipFolder to copy")   
-                    """
-    # Get a list of all .tif files in the current directory and delete this files
-    try:
-        tif_files = glob.glob("./*.tif")
-        for tif_file in tif_files:
-            os.remove(tif_file)
-    except:
-        print(' ')
 

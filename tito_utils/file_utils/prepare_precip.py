@@ -149,9 +149,9 @@ def prepare_all_precip(
     """
     # config shortcuts
     precip_root = getattr(config, "imerg_precip_folder",
-                          getattr(config, "precipFolder", "precip/"))
-    qpf_store_root = getattr(config, "qpf_store_path", "qpf_store/")
-    states_root = getattr(config, "statesPath", "states/")
+                          getattr(config, "precipFolder", "EF5_conf/precip/"))
+    qpf_store_root = getattr(config, "qpf_store_path", "EF5_conf/qpf_store/")
+    states_root = getattr(config, "statesPath", "EF5_conf/states/")
     model_states = getattr(config, "modelStates",
                            ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"])
     gap_mode = getattr(config, "qpe_gap_fill_mode", "IMERG_ONLY").strip().upper()
@@ -226,7 +226,7 @@ def prepare_all_precip(
               f"({len(set(rlist))} region(s))_________***")
         try:
             GFS_searcher(
-                getattr(config, "GFS_precip_path", "precip/gfs/"),
+                getattr(config, "GFS_precip_path", "EF5_conf/precip/gfs/"),
                 shared_store,
                 ct,
                 ct + timedelta(hours=24),
@@ -252,7 +252,7 @@ def prepare_all_precip(
                   f"({len(set(rlist))} region(s))_________***")
             try:
                 AROME_searcher(
-                    getattr(config, "AROME_precip_path", "precip/arome/"),
+                    getattr(config, "AROME_precip_path", "EF5_conf/precip/arome/"),
                     shared_store,
                     ct,
                     ct + timedelta(hours=24),
@@ -282,7 +282,7 @@ def prepare_all_precip(
         region_qpe_sources.get(r, "").upper() == "STREAM_SAT" and _ss_wants_scampr
         for r in regions_to_run
     )):
-        scampr_root = getattr(config, "scampr_precip_folder", "precip/scampr/")
+        scampr_root = getattr(config, "scampr_precip_folder", "EF5_conf/precip/scampr/")
         result.scampr_folder = _with_sep(os.path.join(scampr_root, "_shared"))
         mkdir_p(result.scampr_folder)
 
@@ -329,7 +329,17 @@ def prepare_all_precip(
         # Use the first region's state check; all IMERG regions share the same
         # global bbox so the download is identical.
         ref_region = imerg_regions[0]
-        ref_states_path = os.path.join(states_root, ref_region.lower())
+        from tito_utils.ef5.jobs.helpers import (
+            region_path_key,
+            resolve_region_resolution,
+        )
+        _res = resolve_region_resolution(
+            ref_region,
+            getattr(config, "model_resolution", "90m"),
+            getattr(config, "region_resolution_map", {}),
+        )
+        ref_states_path = os.path.join(
+            states_root, region_path_key(ref_region, _res))
         dl_start, eff_start = _resolve_imerg_download_window(
             ref_region, ct, ref_states_path, model_states,
             cold_warmup, cold_post,
@@ -384,7 +394,7 @@ def prepare_all_precip(
         warm_hours = int(getattr(config, "stream_sat_warmup_hours", 12))
         max_w = getattr(config, "stream_sat_max_workers", None)
         timeout_s = int(getattr(config, "stream_sat_pipeline_timeout", 7200))
-        tif_root_base = getattr(config, "stream_sat_precip_folder", "precip/stream_sat/")
+        tif_root_base = getattr(config, "stream_sat_precip_folder", "EF5_conf/precip/stream_sat/")
         tif_naming = getattr(config, "stream_sat_tif_naming", "streamsat")
 
         # Resolve tif_root_base relative to TITO root
@@ -405,17 +415,32 @@ def prepare_all_precip(
             ss_end_dt = None
             if hindcast:
                 ss_end_dt = region_cycle_times.get(representative) + timedelta(minutes=30)
-                print(f"    STREAM-Sat hindcast --end {ss_end_dt.strftime('%Y-%m-%dT%H:%M')} "
-                      f"(cycle {region_cycle_times.get(representative)})")
+                from tito_utils.logging_utils import debug_print, is_debug, user_print
+                if is_debug():
+                    debug_print(
+                        f"    STREAM-Sat hindcast --end "
+                        f"{ss_end_dt.strftime('%Y-%m-%dT%H:%M')} "
+                        f"(cycle {region_cycle_times.get(representative)})")
             else:
-                print("    STREAM-Sat operational --end omitted (pipeline uses now − IMERG latency)")
+                from tito_utils.logging_utils import debug_print
+                debug_print(
+                    "    STREAM-Sat operational --end omitted "
+                    "(pipeline uses now − IMERG latency)")
 
             # Domain-specific precip folder:
             #   precip/stream_sat/caribbean/ensP1/...  (Caribbean regions)
             #   precip/stream_sat/comoros/ensP1/...    (Comoros)
             domain_tif_root = os.path.join(tif_root_base, domain)
 
-            print(f"***_________STREAM-Sat [{domain}] for {domains_regions} [{ck}]_________***")
+            from tito_utils.logging_utils import debug_print, is_debug, user_print
+            if is_debug():
+                debug_print(
+                    f"***_________STREAM-Sat [{domain}] for "
+                    f"{domains_regions} [{ck}]_________***")
+            else:
+                user_print(
+                    f"    STREAM-Sat [{domain}] for "
+                    f"{', '.join(domains_regions)} …")
             if master_log:
                 master_log.info("STREAM-Sat [%s] start — regions: %s end=%s",
                                 domain, domains_regions, ss_end_dt)
@@ -437,9 +462,13 @@ def prepare_all_precip(
                 # Share result across ALL regions in this domain
                 for region in domains_regions:
                     result.streamsat_info[region] = info
-                print(f"    [{domain}]: STREAM-Sat ready — "
-                      f"{info['ensemble_size']} members in {info['tif_root']}"
-                      f" (shared: {', '.join(domains_regions)})")
+                user_print(
+                    f"    STREAM-Sat [{domain}] ready — "
+                    f"{info['ensemble_size']} members")
+                debug_print(
+                    f"    [{domain}]: STREAM-Sat ready — "
+                    f"{info['ensemble_size']} members in {info['tif_root']}"
+                    f" (shared: {', '.join(domains_regions)})")
 
             except Exception as exc:
                 print(f"    STREAM-Sat [{domain}] failed: {exc}")
@@ -456,9 +485,14 @@ def prepare_all_precip(
     ]
     if stormlab_regions:
         from tito_utils.qpf_utils.stormlab_utils import run_and_convert_stormlab
+        from tito_utils.logging_utils import debug_print, is_debug, user_print
 
         ref_ct = region_cycle_times[stormlab_regions[0]]
-        print(f"***_________StormLab-GFS QPF for {stormlab_regions}_________***")
+        if is_debug():
+            debug_print(
+                f"***_________StormLab-GFS QPF for {stormlab_regions}_________***")
+        else:
+            user_print(f"    StormLab QPF for {', '.join(stormlab_regions)} …")
         if master_log:
             master_log.info("StormLab start — regions=%s cycle_time=%s",
                             stormlab_regions, ref_ct)
@@ -469,7 +503,7 @@ def prepare_all_precip(
                 ensemble_size=int(getattr(config, "stormlab_ensemble_size", 10)),
                 forcing_members=int(getattr(config, "stormlab_forcing_members", 1)),
                 run_pipeline=bool(getattr(config, "stormlab_run_pipeline", True)),
-                tif_root_base=getattr(config, "stormlab_precip_folder", "precip/stormlab/"),
+                tif_root_base=getattr(config, "stormlab_precip_folder", "EF5_conf/precip/stormlab/"),
                 nc_root=getattr(config, "stormlab_nc_root", None),
                 source=str(getattr(config, "stormlab_source", "auto")),
                 timeout_seconds=int(getattr(config, "stormlab_pipeline_timeout", 14400)),

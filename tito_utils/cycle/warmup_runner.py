@@ -22,7 +22,12 @@ from tito_utils.ef5.ef5_routines import (
 from tito_utils.logging_utils import setup_run_log
 from tito_utils.cycle.timeline import STATE_LOOKBACK
 from tito_utils.cycle.warmup import decide_warmup, warmup_window
-from tito_utils.ef5.jobs.helpers import with_sep
+from tito_utils.ef5.jobs.helpers import (
+    region_path_key,
+    resolve_control_template,
+    resolve_region_resolution,
+    with_sep,
+)
 
 
 def run_warmup_if_needed(
@@ -42,9 +47,10 @@ def run_warmup_if_needed(
     are within the 48‑h lookback of the next operational cycle.
 
     For STREAM_SAT regions, warmup states are saved to the standard
-    ``states/<region>/`` path and then **copied** to all per‑member
-    ``states/stream_sat/ensS{N}/<region>/`` folders so every ensemble
-    member can warm‑start from the same spun‑up state.
+    ``states/<region>_<resolution>/`` path and then **copied** to all
+    per‑member     ``EF5_conf/states/stream_sat/ensS{N}/<region>_<resolution>/``
+    folders so every ensemble member can warm‑start from the same spun‑up
+    state.
     """
     warmup_enabled = getattr(config, "warmup_enabled", False)
     if not warmup_enabled:
@@ -69,16 +75,16 @@ def run_warmup_if_needed(
     warmup_streamsat = set()
 
     for region in regions_to_run:
-        rkey = region.lower()
+        region_slug = region.lower()
         qpe = region_qpe_sources.get(region, "IMERG").upper()
-        r_res = (region_resolution_map.get(region, model_resolution)
-                 if isinstance(region_resolution_map, dict)
-                 else model_resolution)
+        r_res = resolve_region_resolution(
+            region, model_resolution, region_resolution_map)
+        rkey = region_path_key(region, r_res)
 
         # ── Check if states exist within 48 h ──────────────────────────
         if qpe == "STREAM_SAT":
             ss_state_root = getattr(config, "stream_sat_state_folder",
-                                    "states/stream_sat/")
+                                    "EF5_conf/states/stream_sat/")
             ens_size = int(getattr(config, "stream_sat_ensemble_size", 10))
             any_found = False
             found_time = None
@@ -102,9 +108,9 @@ def run_warmup_if_needed(
                 states_time=found_time,
             )
             if not decision.needed:
-                print(f"    {region} [STREAM_SAT]: states OK → skip")
+                print(f"    {region} [{r_res}] [STREAM_SAT]: states OK → skip")
                 if master_log:
-                    master_log.info("    %s [STREAM_SAT]: states OK", region)
+                    master_log.info("    %s [%s] [STREAM_SAT]: states OK", region, r_res)
                 continue
             warmup_streamsat.add(region)
             states_path_for_region = os.path.join(statesPath, rkey, "")
@@ -124,15 +130,15 @@ def run_warmup_if_needed(
                 states_time=st if found else None,
             )
             if not decision.needed:
-                print(f"    {region}: states at {st.strftime('%Y%m%d_%H%M')} → skip")
+                print(f"    {region} [{r_res}]: states at {st.strftime('%Y%m%d_%H%M')} → skip")
                 if master_log:
-                    master_log.info("    %s: states OK at %s", region,
+                    master_log.info("    %s [%s]: states OK at %s", region, r_res,
                                     st.strftime('%Y%m%d_%H%M'))
                 continue
 
         wsrc = decision.precip_source
         region_data = os.path.join(dataPath, rkey)
-        entry = (region, rkey, qpe, r_res, states_path_for_region, region_data)
+        entry = (region, rkey, region_slug, qpe, r_res, states_path_for_region, region_data)
 
         if wsrc == "HSAF":
             warmup_hsaf.append(entry)
@@ -168,7 +174,7 @@ def run_warmup_if_needed(
     if warmup_imerg:
         shared_imerg_folder = os.path.join(
             getattr(config, "imerg_precip_folder",
-                    getattr(config, "precipFolder", "precip/")),
+                    getattr(config, "precipFolder", "EF5_conf/precip/")),
             "_warmup", "_shared_imerg",
         )
         mkdir_p(shared_imerg_folder)
@@ -197,20 +203,20 @@ def run_warmup_if_needed(
     warmup_regions_final = []
 
     for entry in warmup_imerg:
-        region, rkey, qpe, r_res, spath, rdata = entry
+        region, rkey, region_slug, qpe, r_res, spath, rdata = entry
         if shared_imerg_folder:
             warmup_regions_final.append(
-                (region, rkey, qpe, r_res, spath, rdata,
+                (region, rkey, region_slug, qpe, r_res, spath, rdata,
                  "IMERG", shared_imerg_folder))
         else:
             print(f"    !!! {region}: no shared IMERG available — skipping warmup")
 
     for entry in warmup_hsaf:
-        region, rkey, qpe, r_res, spath, rdata = entry
+        region, rkey, region_slug, qpe, r_res, spath, rdata = entry
         hsaf_folder = os.path.join(
             getattr(config, "imerg_precip_folder",
-                    getattr(config, "precipFolder", "precip/")),
-            "_warmup", rkey,
+                    getattr(config, "precipFolder", "EF5_conf/precip/")),
+            "_warmup", region_slug,
         )
         mkdir_p(hsaf_folder)
         print(f"\n***_________Warmup: HSAF download for {region}_________***")
@@ -229,7 +235,7 @@ def run_warmup_if_needed(
             )
             print(f"    {region}: HSAF warmup download done")
             warmup_regions_final.append(
-                (region, rkey, qpe, r_res, spath, rdata,
+                (region, rkey, region_slug, qpe, r_res, spath, rdata,
                  "HSAF", hsaf_folder))
             ok = True
         except Exception as exc:
@@ -238,7 +244,7 @@ def run_warmup_if_needed(
         if not ok and shared_imerg_folder:
             print(f"    {region}: fallback to shared IMERG")
             warmup_regions_final.append(
-                (region, rkey, qpe, r_res, spath, rdata,
+                (region, rkey, region_slug, qpe, r_res, spath, rdata,
                  "IMERG", shared_imerg_folder))
         elif not ok:
             print(f"    !!! {region}: no precip available — skipping warmup")
@@ -254,9 +260,11 @@ def run_warmup_if_needed(
     warmup_staging_folders = []
     _lock = threading.Lock()
     output_ts = cycle_time.strftime("%Y%m%d.%H%M%S")
+    region_template_map = getattr(config, "region_template_map", {})
+    default_template = getattr(config, "templates", "ef5_Antigua_control_template.txt")
 
     print(f"\n***_________Building {len(warmup_regions_final)} warmup EF5 job(s)_________***")
-    for (region, rkey, qpe, r_res, spath, rdata,
+    for (region, rkey, region_slug, qpe, r_res, spath, rdata,
          wsrc, wfolder) in warmup_regions_final:
 
         mkdir_p(spath)
@@ -265,17 +273,18 @@ def run_warmup_if_needed(
         mkdir_p(warmup_tmp)
         mkdir_p(warmup_staging)
 
-        tmpl_name = f"ef5_{region}_control_template.txt"
-        region_template_map = getattr(config, "region_template_map", {})
-        tmpl = region_template_map.get(region, tmpl_name)
-        tmpl_path = os.path.join(templatePath, tmpl)
-        if not os.path.isfile(tmpl_path):
-            tmpl = getattr(config, "templates", "ef5_Antigua_control_template.txt")
+        tmpl = resolve_control_template(
+            templatePath,
+            region,
+            r_res,
+            region_template_map=region_template_map,
+            default_template=default_template,
+        )
 
         try:
             job_log = setup_run_log(rdata, f"ef5_warmup_{rkey}")
-            job_log.info("Warmup EF5 — region=%s source=%s days=%d",
-                         region, wsrc, warmup_days)
+            job_log.info("Warmup EF5 — region=%s res=%s source=%s days=%d",
+                         region, r_res, wsrc, warmup_days)
 
             eff_start, ctrl_file, run_path = prepare_ef5(
                 warmup_staging,
@@ -302,18 +311,19 @@ def run_warmup_if_needed(
                 wsrc, "none",
                 stage_precip=True,
                 output_timestamp_str=output_ts,
-                qpf_store_forcing_path=os.path.join(qpf_store_path, rkey, ""),
+                qpf_store_forcing_path=os.path.join(qpf_store_path, region_slug, ""),
                 save_states=True,
                 cold_start_begin_time=warmup_start,
                 cold_start_warm_end_time=warmup_end,
                 verbose=True,
                 run_log=job_log,
             )
-            print(f"    {region} [WARMUP {wsrc}]: {eff_start.strftime('%Y%m%d_%H%M')} → "
+            print(f"    {region} [{r_res}] [WARMUP {wsrc}]: "
+                  f"{eff_start.strftime('%Y%m%d_%H%M')} → "
                   f"{warmup_end.strftime('%Y%m%d_%H%M')}, ctrl={ctrl_file}")
             if master_log:
-                master_log.info("    %s [WARMUP %s]: %s → %s, ctrl=%s",
-                                region, wsrc,
+                master_log.info("    %s [%s] [WARMUP %s]: %s → %s, ctrl=%s",
+                                region, r_res, wsrc,
                                 eff_start.strftime('%Y%m%d_%H%M'),
                                 warmup_end.strftime('%Y%m%d_%H%M'),
                                 ctrl_file)
@@ -328,6 +338,8 @@ def run_warmup_if_needed(
                     "output_timestamp_str": output_ts,
                     "_warmup_qpe":          qpe,
                     "_warmup_end":          warmup_end,
+                    "_warmup_rkey":         rkey,
+                    "_warmup_res":          r_res,
                 })
         except Exception as exc:
             print(f"    !!! {region}: warmup EF5 prep failed: {exc}")
@@ -347,7 +359,11 @@ def run_warmup_if_needed(
     # ═══════════════════════════════════════════════════════════════════
     for job in warmup_jobs:
         region = job["region"]
-        rkey = region.lower()
+        rkey = job.get("_warmup_rkey") or region_path_key(
+            region,
+            resolve_region_resolution(
+                region, model_resolution, region_resolution_map),
+        )
         qpe = job.get("_warmup_qpe", "")
         w_end = job.get("_warmup_end")
 
@@ -355,15 +371,15 @@ def run_warmup_if_needed(
             continue
 
         ss_state_root = getattr(config, "stream_sat_state_folder",
-                                "states/stream_sat/")
+                                "EF5_conf/states/stream_sat/")
         ens_size = int(getattr(config, "stream_sat_ensemble_size", 10))
         src_states_path = os.path.join(statesPath, rkey, "")
 
         print(f"    {region}: copying warmup states to {ens_size} "
-              f"STREAM-Sat member folders …")
+              f"STREAM-Sat member folders ({rkey}) …")
         if master_log:
-            master_log.info("    %s: copying warmup states → %d member folders",
-                            region, ens_size)
+            master_log.info("    %s: copying warmup states → %d member folders (%s)",
+                            region, ens_size, rkey)
 
         for m in range(1, ens_size + 1):
             dst_path = os.path.join(ss_state_root, f"ensS{m}", rkey, "")

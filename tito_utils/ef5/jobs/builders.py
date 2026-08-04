@@ -357,7 +357,7 @@ def build_streamsat_ensemble_jobs(
     gap_state_root = getattr(
         config,
         "scampr_state_folder" if gap_qpe != "HSAF" else "hsaf_state_folder",
-        "states/scampr/" if gap_qpe != "HSAF" else "states/hsaf/",
+        "EF5_conf/states/scampr/" if gap_qpe != "HSAF" else "EF5_conf/states/hsaf/",
     )
     gap_output_root = getattr(
         config,
@@ -704,7 +704,7 @@ def seed_gap_states_from_streamsat(
     gap_state_root = getattr(
         config,
         "scampr_state_folder" if gap_mode != "HSAF" else "hsaf_state_folder",
-        "states/scampr/" if gap_mode != "HSAF" else "states/hsaf/",
+        "EF5_conf/states/scampr/" if gap_mode != "HSAF" else "EF5_conf/states/hsaf/",
     )
     print("***_________Seeding gap-fill states from STREAM-Sat_________***")
     for region in regions:
@@ -727,7 +727,13 @@ def build_streamsat_jobs_parallel(
     if not regions:
         return
     phases = kwargs.get("phases") or ("A", "B", "C")
-    print(f"***_________Building STREAM-Sat EF5 jobs phases={phases}_________***")
+    try:
+        from tito_utils.logging_utils import debug_print, is_debug
+        if is_debug():
+            debug_print(
+                f"***_________Building STREAM-Sat EF5 jobs phases={phases}_________***")
+    except Exception:
+        pass
     with ThreadPoolExecutor(max_workers=len(regions)) as ex:
         futures = {
             ex.submit(build_streamsat_ensemble_jobs, r, **kwargs): r

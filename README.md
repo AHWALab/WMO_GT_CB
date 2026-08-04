@@ -19,15 +19,16 @@ cd TITOCaribbeanAndComoros
 git checkout TITO-StreamSat   # if using the Stream-Sat development branch
 ```
 
-Populate static inputs before running:
+Populate static inputs before running (all under `EF5_conf/`):
 
-- `basic/` — DEM, FAC, FDIR  
-- `parameters/` — CREST / KW parameters  
-- `pet/` — monthly PET  
-- `templates/` — EF5 control templates (already in repo)  
+- `EF5_conf/basic/` — DEM, FAC, FDIR  
+- `EF5_conf/parameters/` — CREST / KW parameters  
+- `EF5_conf/pet/` — monthly PET  
+- `EF5_conf/templates/` — EF5 control templates (already in repo)  
 - Edit `Caribbean_Comoros_config.py` (GPM email, regions, credentials)
 
-Runtime folders (`precip/`, `precipEF5/`, `qpf_store/`, `states/`, `outputs/`) are kept empty in git (`.gitkeep` only) and are filled when you run TITO.
+Runtime folders under `EF5_conf/` (`precip/`, `precipEF5/`, `qpf_store/`, `states/`)
+plus top-level `outputs/` are kept empty in git (`.gitkeep` only) and are filled when you run TITO.
 
 ---
 
@@ -157,13 +158,10 @@ Prefer `./tito-run.sh` with Docker or Apptainer for partner deployments.
 
 ## Repository structure
 
-Region EF5 templates under `templates/`:
+Region EF5 templates under `EF5_conf/templates/`:
 
-- `ef5_Antigua_control_template.txt`
-- `ef5_Barbados_control_template.txt`
-- `ef5_Comoros_control_template.txt`
-- `ef5_Guatemala_control_template.txt`
-- `ef5_Haiti_control_template.txt`
+- `ef5_Guatemala_control_template.txt` (90m)
+- `ef5_Guatemala_900m_control_template.txt` (900m)
 
 Users must populate topographic and parameter grids for their region. See [EF5-builder-toolkit](https://github.com/AHWALab/EF5-builder-toolkit).
 
@@ -176,21 +174,23 @@ Users must populate topographic and parameter grids for their region. See [EF5-b
 - **`container-build.sh`** — build TITO + EF5 images (+ local EF5 binary)  
 - **`docker-to-apptainer.sh`** — convert `tito` Docker archive → `tito.sif`  
 - **`tito_utils/`** — precip, EF5 jobs, cycle timeline helpers  
-- **`STREAM-Sat-realtime/`** — STREAM-Sat ensemble QPE pipeline  
+- **`tito_utils/qpe_utils/STREAM-Sat-realtime/`** — STREAM-Sat ensemble QPE  
+- **`tito_utils/qpf_utils/StormLab-GFS-realtime/`** — StormLab ensemble QPF  
+- **`EF5_conf/`** — all EF5 static inputs + runtime precip/states  
 
 ### Input / output directories
 
 | Folder | Role |
 |---|---|
-| `basic/` | DEM, FAC, FDIR |
-| `pet/` | Monthly PET |
-| `parameters/` | CREST / KW parameters |
-| `states/` | Model states (runtime; `.gitkeep` only in git) |
+| `EF5_conf/basic/` | DEM, FAC, FDIR |
+| `EF5_conf/pet/` | Monthly PET |
+| `EF5_conf/parameters/` | CREST / KW parameters |
+| `EF5_conf/templates/` | EF5 control templates |
+| `EF5_conf/states/` | Model states (runtime) |
+| `EF5_conf/precip/` | QPE downloads / STREAM-Sat / StormLab GeoTIFFs |
+| `EF5_conf/precipEF5/` | Staged precip for EF5 |
+| `EF5_conf/qpf_store/` | GFS / AROME / WRF QPF working folders |
 | `outputs/` | Simulation outputs + hindcast logs |
-| `precip/` | QPE downloads / STREAM-Sat GeoTIFFs |
-| `precipEF5/` | Staged precip for EF5 |
-| `qpf_store/` | GFS / AROME / WRF QPF |
-| `templates/` | EF5 control templates |
 | `dist/` | Local Docker archives (**gitignored** → Zenodo) |
 
 ---
@@ -201,13 +201,13 @@ Set `qpe_source = "STREAM_SAT"` and `qpf_source = "STORMLAB"` in `region_forcing
 
 | Phase | Forcing | States |
 |---|---|---|
-| **A** STREAM-Sat QPE | `precip/stream_sat/…/ensP*` | `states/stream_sat/ensS*/` @ ss_end (~T−4h) |
-| **B** SCaMPR/HSAF gap | SCaMPR (or HSAF) to cycle time T | `states/scampr/ensS*/` (or `states/hsaf/`) @ T |
+| **A** STREAM-Sat QPE | `EF5_conf/precip/stream_sat/…/ensP*` | `EF5_conf/states/stream_sat/ensS*/` @ ss_end (~T−4h) |
+| **B** SCaMPR/HSAF gap | SCaMPR (or HSAF) to cycle time T | `EF5_conf/states/scampr/ensS*/` (or `…/hsaf/`) @ T |
 | **C** StormLab forecast | nested SS×SL members | not saved |
 
-StormLab-GFS lives in `StormLab-GFS-realtime/`; NC→GeoTIFF conversion writes
-`precip/stormlab/<region>/ensQ*/stormlab.YYYYMMDDHH00.tif`. Antigua uses the
-StormLab **lesserantilles** domain.
+StormLab-GFS lives in `tito_utils/qpf_utils/StormLab-GFS-realtime/`; NC→GeoTIFF
+conversion writes `EF5_conf/precip/stormlab/<region>/ensQ*/stormlab.YYYYMMDDHH00.tif`.
+Antigua uses the StormLab **lesserantilles** domain.
 
 | Config variable | Description | Default |
 |---|---|---|

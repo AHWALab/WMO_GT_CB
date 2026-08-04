@@ -234,7 +234,7 @@ def run_ef5_job_pipeline(
                 )
 
             ss_state_root = getattr(
-                config, "stream_sat_state_folder", "states/stream_sat/")
+                config, "stream_sat_state_folder", "EF5_conf/states/stream_sat/")
             ss_out_root = getattr(
                 config, "stream_sat_output_folder", "outputs/stream_sat/")
 
@@ -253,13 +253,21 @@ def run_ef5_job_pipeline(
 
             phase_timings = []
 
+            from tito_utils.logging_utils import debug_print, is_debug, user_print
+
             if batch.streamsat_jobs:
-                print(f"***_________Phase SS-A: STREAM-Sat EF5 "
-                      f"({len(batch.streamsat_jobs)} jobs)_________***")
+                if is_debug():
+                    debug_print(
+                        f"***_________Phase SS-A: STREAM-Sat EF5 "
+                        f"({len(batch.streamsat_jobs)} jobs)_________***")
+                else:
+                    user_print(
+                        f"    EF5 Phase A: STREAM-Sat "
+                        f"({len(batch.streamsat_jobs)} runs) …")
                 phase_timings.append(
                     _run_phase_jobs("SS-A STREAM-Sat", batch.streamsat_jobs, master_log)
                 )
-                print("    STREAM-Sat ensemble complete — states @ ss_end")
+                user_print("    STREAM-Sat EF5 complete — states saved")
 
             seed_gap_states_from_streamsat(
                 ss_regions, region_configs, shared, config,
@@ -267,6 +275,7 @@ def run_ef5_job_pipeline(
             )
 
             # Phase B controls after seed so ss_end states are visible
+            # (skipped in hindcast — gap_mode=NONE, no jobs built)
             build_streamsat_jobs_parallel(
                 ss_regions,
                 hindcast_mode=hindcast_mode,
@@ -279,12 +288,18 @@ def run_ef5_job_pipeline(
             )
 
             if batch.streamsat_gap_jobs:
-                print(f"***_________Phase SS-B: gap-fill EF5 "
-                      f"({len(batch.streamsat_gap_jobs)} jobs)_________***")
+                if is_debug():
+                    debug_print(
+                        f"***_________Phase SS-B: gap-fill EF5 "
+                        f"({len(batch.streamsat_gap_jobs)} jobs)_________***")
+                else:
+                    user_print(
+                        f"    EF5 Phase B: gap-fill "
+                        f"({len(batch.streamsat_gap_jobs)} runs) …")
                 phase_timings.append(
                     _run_phase_jobs("SS-B gap-fill", batch.streamsat_gap_jobs, master_log)
                 )
-                print("    Gap-fill complete — states saved at cycle time T")
+                user_print("    Gap-fill EF5 complete — states saved at cycle time")
 
             # Phase C after B so forecast warm-starts from states @ T
             build_streamsat_jobs_parallel(
@@ -299,17 +314,23 @@ def run_ef5_job_pipeline(
             )
 
             if batch.streamsat_lr_jobs:
-                print(f"***_________Phase SS-C: StormLab QPE EF5 "
-                      f"({len(batch.streamsat_lr_jobs)} jobs)_________***")
+                if is_debug():
+                    debug_print(
+                        f"***_________Phase SS-C: StormLab QPE EF5 "
+                        f"({len(batch.streamsat_lr_jobs)} jobs)_________***")
+                else:
+                    user_print(
+                        f"    EF5 Phase C: StormLab forecast "
+                        f"({len(batch.streamsat_lr_jobs)} runs) …")
                 phase_timings.append(
                     _run_phase_jobs("SS-C StormLab QPE[Forecast]", batch.streamsat_lr_jobs, master_log)
                 )
-                print("    StormLab QPE ensemble runs complete")
+                user_print("    StormLab EF5 complete")
 
             if (batch.streamsat_jobs or batch.streamsat_gap_jobs
                     or batch.streamsat_lr_jobs):
-                newline(2)
-                print("******** STREAM-Sat EF5 Outputs are ready!!! ********")
+                newline(1)
+                user_print("******** STREAM-Sat EF5 outputs ready ********")
                 _log_streamsat_summary(
                     regions_to_run, shared, batch, cycle_time, t_start, master_log,
                     phase_timings=phase_timings,
@@ -390,11 +411,11 @@ def _log_streamsat_summary(
             summary.append(f"    StormLab members:  {sl_info.get('ensemble_size', '?')}")
             summary.append(f"    StormLab TIFs:     {sl_info.get('tif_root', '?')}")
     summary.append(
-        f"  Phase SS-A jobs: {len(batch.streamsat_jobs)}  (STREAM-Sat QPE, save states)")
+        f"  Phase A jobs: {len(batch.streamsat_jobs)}  (STREAM-Sat QPE, save states)")
     summary.append(
-        f"  Phase SS-B jobs: {len(batch.streamsat_gap_jobs)}  (SCaMPR/HSAF gap, save states)")
+        f"  Phase B jobs: {len(batch.streamsat_gap_jobs)}  (SCaMPR/HSAF QPE gap, save states)")
     summary.append(
-        f"  Phase SS-C jobs: {len(batch.streamsat_lr_jobs)}  (StormLab QPE, no LR)")
+        f"  Phase C jobs: {len(batch.streamsat_lr_jobs)}  (StormLab QPF Forecast)")
     summary.append(f"  IMERG EF5 jobs:  {len(batch.imerg_jobs)}")
     summary.append(f"  LR EF5 jobs:     {len(batch.lr_jobs)}")
 

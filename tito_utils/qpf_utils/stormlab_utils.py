@@ -38,10 +38,11 @@ from osgeo import gdal, osr
 log = logging.getLogger("stormlab-utils")
 
 TITO_ROOT = Path(__file__).resolve().parent.parent.parent
-STORMLAB_REPO = TITO_ROOT / "StormLab-GFS-realtime"
+# StormLab lives next to this module under tito_utils/qpf_utils/
+STORMLAB_REPO = Path(__file__).resolve().parent / "StormLab-GFS-realtime"
 STORMLAB_REGIONS_SCRIPT = STORMLAB_REPO / "scripts" / "06_run_regions.py"
 STORMLAB_CYCLE_SCRIPT = STORMLAB_REPO / "scripts" / "05_run_operational_cycle.py"
-DEFAULT_TIF_ROOT = TITO_ROOT / "precip" / "stormlab"
+DEFAULT_TIF_ROOT = TITO_ROOT / "EF5_conf" / "precip" / "stormlab"
 DEFAULT_NC_ROOT = STORMLAB_REPO / "output"
 
 FILL_VALUE = -9999.0
@@ -241,46 +242,78 @@ def run_stormlab_for_regions(
     if forcing_members is not None:
         cmd += ["--forcing-members", str(int(forcing_members))]
 
+    from tito_utils.logging_utils import (
+        debug_print, filter_stormlab_line, is_debug, user_print,
+    )
+
     env = os.environ.copy()
     src = str(STORMLAB_REPO / "src")
     prev = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{src}{os.pathsep}{prev}" if prev else src
     # Explicit: do not activate a separate stormlab conda env
     env["STORMLAB_USE_TITO_ENV"] = "1"
-    print(f"    [StormLab] python={py} (tito_env2 / active TITO env)")
+    if is_debug():
+        print(f"    [StormLab] python={py} (tito_env2 / active TITO env)")
     if pipeline_log:
         pipeline_log.info("[StormLab] python=%s", py)
 
     log.info("StormLab run: %s", " ".join(cmd))
-    print(f"    [StormLab] cmd: {' '.join(cmd)}")
+    if is_debug():
+        print(f"    [StormLab] cmd: {' '.join(cmd)}")
+    else:
+        user_print(f"    StormLab: starting ({', '.join(domains)}) …")
     if pipeline_log:
         pipeline_log.info("[StormLab] cmd: %s", " ".join(cmd))
 
     t0 = time.time()
-    cp = subprocess.run(
-        cmd,
-        cwd=str(STORMLAB_REPO),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
+    combined_chunks: List[str] = []
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(STORMLAB_REPO),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        deadline = t0 + float(timeout_seconds)
+        while True:
+            if time.time() > deadline:
+                proc.kill()
+                raise subprocess.TimeoutExpired(cmd, timeout_seconds)
+            line = proc.stdout.readline()
+            if line == "" and proc.poll() is not None:
+                break
+            if not line:
+                time.sleep(0.05)
+                continue
+            combined_chunks.append(line)
+            shown = filter_stormlab_line(line)
+            if shown is not None:
+                print(shown, flush=True)
+            elif is_debug():
+                debug_print(line.rstrip("\n"))
+        rc = proc.wait(timeout=max(1, int(deadline - time.time())))
+    except subprocess.TimeoutExpired:
+        raise
+
     elapsed = time.time() - t0
+    combined = "".join(combined_chunks)
 
     if pipeline_log:
-        if cp.stdout:
-            pipeline_log.info("[StormLab] STDOUT:\n%s", cp.stdout[-8000:])
-        if cp.stderr:
-            pipeline_log.info("[StormLab] STDERR:\n%s", cp.stderr[-8000:])
-        pipeline_log.info("[StormLab] elapsed=%.1fs rc=%s", elapsed, cp.returncode)
+        if combined:
+            pipeline_log.info("[StormLab] OUTPUT:\n%s", combined[-8000:])
+        pipeline_log.info("[StormLab] elapsed=%.1fs rc=%s", elapsed, rc)
 
-    if cp.returncode != 0:
+    if rc != 0:
         raise RuntimeError(
-            f"StormLab failed (rc={cp.returncode}): "
-            f"{(cp.stderr or cp.stdout or '')[-2000:]}"
+            f"StormLab failed (rc={rc}): {combined[-2000:]}"
         )
 
-    return {"domains": domains, "elapsed": elapsed, "rc": cp.returncode}
+    user_print(f"    StormLab: completed in {elapsed:.0f}s")
+    return {"domains": domains, "elapsed": elapsed, "rc": rc}
 
 
 def _geo_from_latlon(lats, lons):

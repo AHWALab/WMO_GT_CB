@@ -1,6 +1,6 @@
 # ============================================================================
 # TITO — Real-time Flash Flood Forecasting System
-# Docker image with full conda environment, Nowcast ML, and EF5 integration
+# Docker image with full conda environment and EF5 integration
 # ============================================================================
 # Build:
 #   docker build -t tito:latest .
@@ -8,19 +8,15 @@
 # Run (operational):
 #   docker run --rm \
 #     -v /var/run/docker.sock:/var/run/docker.sock \
-#     -v $(pwd)/states:/app/states \
+#     -v $(pwd)/EF5_conf:/app/EF5_conf \
 #     -v $(pwd)/outputs:/app/outputs \
-#     -v $(pwd)/precip:/app/precip \
-#     -v $(pwd)/qpf_store:/app/qpf_store \
 #     tito:latest
 #
 # Run (hindcast):
 #   docker run --rm \
 #     -v /var/run/docker.sock:/var/run/docker.sock \
-#     -v $(pwd)/states:/app/states \
+#     -v $(pwd)/EF5_conf:/app/EF5_conf \
 #     -v $(pwd)/outputs:/app/outputs \
-#     -v $(pwd)/precip:/app/precip \
-#     -v $(pwd)/qpf_store:/app/qpf_store \
 #     tito:latest hindcast "2025-11-16 00:00" "2025-11-17 20:00"
 # ============================================================================
 
@@ -77,30 +73,24 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
 # Make conda activate available in non-interactive shells
 SHELL ["/bin/bash", "-c"]
 
-# ── Install Nowcast ML package ─────────────────────────────────────────────
-COPY Nowcast/ /app/Nowcast/
-RUN source /opt/conda/etc/profile.d/conda.sh \
-    && conda activate tito_env2 \
-    && cd /app/Nowcast/nowcasting \
-    && pip install -e . --no-deps \
-    && pip install requests
-
 # ── Copy application code ──────────────────────────────────────────────────
 WORKDIR /app
 COPY . /app/
 
 # Create directories that will be volume-mounted
-RUN mkdir -p /app/states /app/outputs /app/precip /app/precipEF5 \
-             /app/qpf_store /app/pet /app/basic /app/parameters \
-             /app/templates /app/outputs/logs \
-             /app/StormLab-GFS-realtime/output \
-             /app/precip/stormlab /app/states/stream_sat \
-             /app/states/scampr /app/states/hsaf \
+RUN mkdir -p /app/EF5_conf/basic /app/EF5_conf/parameters /app/EF5_conf/pet \
+             /app/EF5_conf/templates /app/EF5_conf/states \
+             /app/EF5_conf/precip /app/EF5_conf/precipEF5 /app/EF5_conf/qpf_store \
+             /app/outputs /app/outputs/logs \
+             /app/tito_utils/qpf_utils/StormLab-GFS-realtime/output \
+             /app/EF5_conf/precip/stormlab /app/EF5_conf/precip/stream_sat \
+             /app/EF5_conf/states/stream_sat \
+             /app/EF5_conf/states/scampr /app/EF5_conf/states/hsaf \
              /app/outputs/stream_sat /app/outputs/scampr \
              /app/outputs/stormlab
 
 # StormLab-GFS runs inside tito_env2 (same interpreter as TITO / STREAM-Sat).
-# Code is under /app/StormLab-GFS-realtime; NC outputs bind-mounted at runtime.
+# Code: tito_utils/qpf_utils/StormLab-GFS-realtime; STREAM-Sat: tito_utils/qpe_utils/STREAM-Sat-realtime
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 COPY docker-entrypoint.sh /docker-entrypoint.sh

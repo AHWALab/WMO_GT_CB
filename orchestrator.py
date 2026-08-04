@@ -27,13 +27,24 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from tito_utils.precip import prepare_cycle_precip, summarize_shared_precip
-from tito_utils.logging_utils import console, setup_run_log
+from tito_utils.logging_utils import (
+    console,
+    configure_console_verbosity,
+    debug_print,
+    is_debug,
+    is_user,
+    setup_run_log,
+    suppress_third_party_noise,
+    user_print,
+)
 from tito_utils.cycle.warmup_runner import run_warmup_if_needed
 from tito_utils.cycle.region_plan import build_region_configs
 from tito_utils.cycle.timeline import round_cycle_time
 from tito_utils.ef5.jobs import run_ef5_job_pipeline
 
-print(">>> Modules imported")
+# Quiet GDAL / OpenMP noise as early as possible (before heavy imports run)
+suppress_third_party_noise()
+debug_print(">>> Modules imported")
 
 
 def main(args):
@@ -46,6 +57,8 @@ def main(args):
     _ap.add_argument("--hindcast-date", default=None,
                      help="Override HindCastDate in config (format: YYYY-MM-DD HH:MM). "
                           "Forces HindCastMode=True for this run.")
+    _ap.add_argument("--debug-console", action="store_true",
+                     help="Full developer console logs (overrides console_verbosity)")
     _cli, _ = _ap.parse_known_args(args[1:])
     _cli_regions = ([r.strip() for r in _cli.regions.split(",") if r.strip()]
                     if _cli.regions else None)
@@ -53,7 +66,15 @@ def main(args):
 
     config_module_name = os.path.splitext(os.path.basename(_cli.config))[0]
     config = importlib.import_module(config_module_name)
-    print(">>> Config file loaded")
+    # Verbosity: CLI --debug-console > env TITO_CONSOLE_VERBOSITY > config
+    if getattr(_cli, "debug_console", False):
+        os.environ["TITO_CONSOLE_VERBOSITY"] = "debug"
+    configure_console_verbosity(getattr(config, "console_verbosity", "user"))
+    suppress_third_party_noise()
+    debug_print(">>> Config file loaded")
+    if is_user():
+        user_print(f"TITO ready  (console=user; set console_verbosity='debug' or "
+                   f"--debug-console for full logs)")
 
     regions_to_run = getattr(config, "regions_to_run", [config.subdomain])
     if isinstance(regions_to_run, str):
@@ -157,8 +178,8 @@ def _run_single_cycle(
     modelStates = config.modelStates
     templatePath = config.templatePath
     default_template = config.templates
-    basicPath = getattr(config, "basicPath", "basic/")
-    parametersPath = getattr(config, "parametersPath", "parameters/")
+    basicPath = getattr(config, "basicPath", "EF5_conf/basic/")
+    parametersPath = getattr(config, "parametersPath", "EF5_conf/parameters/")
     dataPath = config.dataPath
     qpf_store_path = config.qpf_store_path
     SEND_ALERTS = config.SEND_ALERTS
@@ -200,8 +221,9 @@ def _run_single_cycle(
         master_log=master_log,
     )
 
-    # Pre-clean precipEF5
-    console.info("[bold]Pre-clean:[/] wiping precipEF5 …")
+    # Pre-clean precipEF5 (always run; console message only in debug)
+    if is_debug():
+        console.info("[bold]Pre-clean:[/] wiping precipEF5 …")
     for root, dirs, files in os.walk(precipEF5Folder, topdown=False):
         for f in files:
             try:
@@ -223,8 +245,11 @@ def _run_single_cycle(
         config,
         master_log=master_log,
     )
-    console.info("[bold]STEP 2:[/] Precipitation ready. %s",
-                 summarize_shared_precip(shared))
+    if is_debug():
+        console.info("[bold]STEP 2:[/] Precipitation ready. %s",
+                     summarize_shared_precip(shared))
+    else:
+        console.info("[bold]STEP 2:[/] Precipitation ready.")
 
     # STEP 3 — Region timing configs
     region_configs = build_region_configs(

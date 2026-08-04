@@ -1,7 +1,7 @@
 [Basic]
-DEM=basic/{dem}
-DDM=basic/{ddm}
-FAM=basic/{fam}
+DEM=EF5_conf/basic/{dem}
+DDM=EF5_conf/basic/{ddm}
+FAM=EF5_conf/basic/{fam}
 PROJ=geographic
 ESRIDDM=true SelfFAM=false
 
@@ -34,7 +34,7 @@ LOC=qpf_store/wrf_data/
 NAME=wrf.YYYYMMDDHHUU.tif
 
 [PETForcing CLIMO]
-LOC=pet/
+LOC=EF5_conf/pet/
 FREQ=1m
 UNIT=mm/d
 NAME=PET.MM.tif 
@@ -44,10 +44,10 @@ TYPE=TIF
 #---End Gauge-Basin Block
 
 [CrestParamSet MyCRESTPAR]
-wm_grid=parameters/{wm_crest}
-b_grid=parameters/{b_crest}
-im_grid=parameters/{im_crest}
-fc_grid=parameters/{fc_crest}
+wm_grid=EF5_conf/parameters/{wm_crest}
+b_grid=EF5_conf/parameters/{b_crest}
+im_grid=EF5_conf/parameters/{im_crest}
+fc_grid=EF5_conf/parameters/{fc_crest}
 gauge=0
 wm=1.00
 b=1.0
@@ -57,17 +57,17 @@ fc=1.00
 iwu=0.0
 
 [kwparamset MyKWPAR]
-alpha_grid=parameters/{alpha_kw}
-beta_grid=parameters/{beta_kw}
-alpha0_grid=parameters/{alpha0_kw}
-under_grid=parameters/{fc_crest}
+alpha_grid=EF5_conf/parameters/{alpha_kw}
+beta_grid=EF5_conf/parameters/{beta_kw}
+alpha0_grid=EF5_conf/parameters/{alpha0_kw}
+under_grid=EF5_conf/parameters/{fc_crest}
 gauge=0
 alpha=1.0
 alpha0=1.0
 beta=1.0
 under=0.001
 leaki=0.03
-th=50.0
+th=12
 isu=0.0
 
 [Task Simulation_QPE]

@@ -21,24 +21,15 @@ services:
 
       # ── Persistent data (bind-mount host dirs so states/outputs
       #     survive container restarts) ──────────────────────────────────
-      - ./states:/app/states:rw
+      - ./EF5_conf:/app/EF5_conf:rw
       - ./outputs:/app/outputs:rw
-      - ./precip:/app/precip:rw
-      - ./precipEF5:/app/precipEF5:rw
-      - ./qpf_store:/app/qpf_store:rw
-      - ./pet:/app/pet:ro
-      - ./basic:/app/basic:ro
-      - ./parameters:/app/parameters:ro
-      - ./templates:/app/templates:ro
       - ./EF5:/app/EF5:ro
       # Mount config so edits apply without rebuilding the image
       - ./Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro
       - ./orchestrator.py:/app/orchestrator.py:ro
       - ./hindcast_manager.py:/app/hindcast_manager.py:ro
-      - ./tito_utils:/app/tito_utils:ro
-      - ./STREAM-Sat-realtime:/app/STREAM-Sat-realtime:rw
-      # StormLab-GFS (same tito_env2 interpreter via sys.executable)
-      - ./StormLab-GFS-realtime:/app/StormLab-GFS-realtime:rw
+      # tito_utils includes STREAM-Sat (qpe_utils/) and StormLab (qpf_utils/)
+      - ./tito_utils:/app/tito_utils:rw
 
     # ── Environment ────────────────────────────────────────────────────
     environment:
@@ -66,7 +57,7 @@ services:
 
     # ── Cron scheduling (use external cron + docker run for hourly runs) ──
     # For hourly operational mode, add this to crontab:
-    #   7 * * * * cd /path/to/TITO_Stream_Sat && docker-compose run --rm tito operational
+    #   7 * * * * cd /path/to/TITO_GuatemalaTraining && docker-compose run --rm tito operational
 
   # ── Optional: EF5 builder service ────────────────────────────────────
   ef5-builder:

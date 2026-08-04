@@ -7,6 +7,11 @@ from datetime import timedelta
 from typing import Any, Dict, Mapping, Sequence
 
 from tito_utils.cycle.timeline import IMERG_LATENCY, build_cycle_plan
+from tito_utils.ef5.jobs.helpers import (
+    region_path_key,
+    resolve_control_template,
+    resolve_region_resolution,
+)
 
 
 def build_region_configs(
@@ -29,15 +34,23 @@ def build_region_configs(
 
     Also attaches a ``cycle_plan`` (:class:`CyclePlan`) per region so
     downstream code / tests can inspect timing contracts.
+
+    States/outputs use ``{region_lower}_{resolution}`` (e.g. ``guatemala_900m``).
+    QPF store stays region-only (forcing is resolution-independent).
     """
     region_template_map = getattr(config, "region_template_map", {})
+    model_resolution = getattr(config, "model_resolution", "90m")
+    region_resolution_map = getattr(config, "region_resolution_map", {})
     warmup_days = int(getattr(config, "warmup_days", 5))
     mode = "hindcast" if hindcast_mode else "operational"
     lr_duration = timedelta(hours=24) if lr_run else timedelta(0)
 
     region_configs: Dict[str, dict] = {}
     for region in regions_to_run:
-        rkey = region.lower()
+        region_slug = region.lower()
+        r_res = resolve_region_resolution(
+            region, model_resolution, region_resolution_map)
+        rkey = region_path_key(region, r_res)
         ct = region_cycle_times[region]
         qpe = region_qpe_sources[region]
         qpf_list = list(region_qpf_requested[region]) if lr_run else []
@@ -73,14 +86,18 @@ def build_region_configs(
         r_fail_time = r_warm_end - timedelta(days=7)
         output_ts = ct.strftime("%Y%m%d.%H%M%S")
 
-        tmpl_candidate = f"ef5_{region}_control_template.txt"
-        tmpl = region_template_map.get(region, tmpl_candidate)
-        tmpl_path = os.path.join(template_path, tmpl)
-        if not os.path.isfile(tmpl_path):
-            tmpl = default_template
+        tmpl = resolve_control_template(
+            template_path,
+            region,
+            r_res,
+            region_template_map=region_template_map,
+            default_template=default_template,
+        )
 
         region_configs[region] = {
             "region_key":           rkey,
+            "region_slug":          region_slug,
+            "model_resolution":     r_res,
             "region_current_time":  ct,
             "output_timestamp_str": output_ts,
             "qpe_source":           qpe,
@@ -99,7 +116,7 @@ def build_region_configs(
             "cycle_time_key":       ct.strftime("%Y%m%d%H%M"),
             "region_states_path":   os.path.join(states_path, rkey),
             "region_data_path":     os.path.join(data_path, rkey),
-            "region_qpf_store":     os.path.join(qpf_store_path, rkey, ""),
+            "region_qpf_store":     os.path.join(qpf_store_path, region_slug, ""),
             "cycle_plan":           plan,
         }
 

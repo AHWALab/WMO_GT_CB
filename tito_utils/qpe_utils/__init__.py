@@ -5,7 +5,6 @@ from .imerg_retrieve import (
     ReadandWarp,
     WriteGrid,
     processIMERG,
-    get_new_precip
 )
 from .hsaf_retrieve import (
     get_new_hsaf_precip,
@@ -36,7 +35,6 @@ __all__ = [
     'ReadandWarp',
     'WriteGrid',
     'processIMERG',
-    'get_new_precip',
     'get_new_hsaf_precip',
     'get_new_scampr_precip',
     'fill_imerg_gap_with_scampr',

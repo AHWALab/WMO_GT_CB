@@ -1,12 +1,12 @@
 # ── Large data (bind-mounted at runtime, NOT baked into image) ──
-states/
+EF5_conf/states/
+EF5_conf/precip/
+EF5_conf/precipEF5/
+EF5_conf/qpf_store/
+EF5_conf/pet/
+EF5_conf/basic/
+EF5_conf/parameters/
 outputs/
-precip/
-precipEF5/
-qpf_store/
-pet/
-basic/
-parameters/
 logs/
 __pycache__/
 *.pyc
@@ -15,9 +15,12 @@ tito.sif
 dist/
 apptainer/
 # StormLab runtime products (code/params stay in image; NC output bind-mounted)
-StormLab-GFS-realtime/output/
-StormLab-GFS-realtime/WMO.zip
-StormLab-GFS-realtime/**/__pycache__/
+tito_utils/qpf_utils/StormLab-GFS-realtime/output/
+tito_utils/qpf_utils/StormLab-GFS-realtime/WMO.zip
+tito_utils/qpf_utils/StormLab-GFS-realtime/**/__pycache__/
+tito_utils/qpe_utils/STREAM-Sat-realtime/**/__pycache__/
+tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/output/
+tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/state/
 
 # ── Git / IDE ──
 .git/

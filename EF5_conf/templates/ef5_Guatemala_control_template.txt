@@ -1,0 +1,118 @@
+[Basic]
+DEM=EF5_conf/basic/{dem}
+DDM=EF5_conf/basic/{ddm}
+FAM=EF5_conf/basic/{fam}
+PROJ=geographic
+ESRIDDM=true SelfFAM=false
+
+[PrecipForcing IMERG]
+TYPE=TIF
+UNIT=mm/30u
+FREQ=30u
+LOC=precipEF5/
+NAME=imerg.qpe.YYYYMMDDHHUU.30minAccum.tif
+
+[PrecipForcing GFS]
+TYPE=TIF
+UNIT=mm/h
+FREQ=1h
+LOC=qpf_store/gfs_data/
+NAME=gfs.YYYYMMDDHH00.tif
+
+[PrecipForcing STORMLAB]
+TYPE=TIF
+UNIT=mm/h
+FREQ=1h
+LOC=qpf_store/stormlab_data/
+NAME=stormlab.YYYYMMDDHH00.tif
+
+[PrecipForcing WRF]
+TYPE=TIF
+UNIT=mm/h
+FREQ={TIMESTEPLR}
+LOC=qpf_store/wrf_data/
+NAME=wrf.YYYYMMDDHHUU.tif
+
+[PETForcing CLIMO]
+LOC=EF5_conf/pet/
+FREQ=1m
+UNIT=mm/d
+NAME=PET.MM.tif 
+TYPE=TIF
+
+#---Start Gauge-Basin Block
+#---End Gauge-Basin Block
+
+[CrestParamSet MyCRESTPAR]
+wm_grid=EF5_conf/parameters/{wm_crest}
+b_grid=EF5_conf/parameters/{b_crest}
+im_grid=EF5_conf/parameters/{im_crest}
+fc_grid=EF5_conf/parameters/{fc_crest}
+gauge=0
+wm=1.00
+b=1.0
+im=0.01
+ke=1.0
+fc=1.00
+iwu=0.0
+
+[kwparamset MyKWPAR]
+alpha_grid=EF5_conf/parameters/{alpha_kw}
+beta_grid=EF5_conf/parameters/{beta_kw}
+alpha0_grid=EF5_conf/parameters/{alpha0_kw}
+under_grid=EF5_conf/parameters/{fc_crest}
+gauge=0
+alpha=1.0
+alpha0=1.0
+beta=1.0
+under=0.001
+leaki=0.03
+th=50.0
+isu=0.0
+
+[Task Simulation_QPE]
+STYLE=SIMU
+MODEL=crest
+ROUTING=KW
+BASIN=0
+PRECIP=IMERG
+PET=CLIMO
+OUTPUT={OUTPUTPATH}
+STATES={STATESPATH}
+OUTPUT_GRIDS=MAXUNITSTREAMFLOW|MAXSTREAMFLOW|PRECIPACCUM
+defaultparamsgauge=0
+PARAM_SET=MyCRESTPAR
+ROUTING_PARAM_Set=MyKWPAR
+TIMESTEP=30u
+TIME_BEGIN={TIMEBEGIN}
+TIME_WARMEND={TIMEWARMEND}
+TIME_STATE={TIMESTATE}
+TIME_END={TIMEEND}
+
+[Task Simulation_QPF]
+STYLE=SIMU
+MODEL=crest
+ROUTING=KW
+BASIN=0
+PRECIP=IMERG
+PRECIPFORECAST=GFS
+PET=CLIMO
+OUTPUT={OUTPUTPATH}
+STATES={STATESPATH}
+OUTPUT_GRIDS=MAXUNITSTREAMFLOW|MAXSTREAMFLOW|PRECIPACCUM
+defaultparamsgauge=0
+PARAM_SET=MyCRESTPAR
+ROUTING_PARAM_Set=MyKWPAR
+TIMESTEP=30u
+TIME_BEGIN={TIMEBEGIN}
+TIME_WARMEND={TIMEWARMEND}
+TIME_STATE={TIMESTATE}
+TIME_END={TIMEEND}
+TIMESTEP_LR={TIMESTEPLR}
+TIME_BEGIN_LR={TIMEBEGINLR}
+#co_file={OUTPUTPATH}/co_{SYSTEMMODEL}.csv
+
+
+[Execute]
+task=Simulation_QPE
+#task=Simulation_QPF
