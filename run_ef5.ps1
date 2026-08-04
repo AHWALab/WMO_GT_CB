@@ -1,4 +1,19 @@
+# ===============================ESPAÑOL=============================================
+# run_ef5.ps1 — Ejecutar EF5 (Docker) en Windows
 # ============================================================================
+# Utiliza Docker Compose (Docker Desktop) para que los montajes (bind mounts)
+# de las carpetas de datos, salida y configuración se resuelvan
+# automáticamente en Windows.
+#
+# Uso:
+#   .\run_ef5.ps1                         # ejecuta conf/control.txt
+#   .\run_ef5.ps1 -Control my_control.txt # ejecuta conf/my_control.txt
+#   .\run_ef5.ps1 -Bash                   # abre una consola interactiva
+#
+# La imagen se garantiza mediante docker/build_ef5.ps1 (reutilizar / cargar / compilar).
+# ============================================================================
+
+# ==============================ENGLISH==============================================
 # run_ef5.ps1 — Run EF5 (Docker) on Windows
 # ============================================================================
 # Uses docker compose (Docker Desktop) so the data/output/conf bind mounts
