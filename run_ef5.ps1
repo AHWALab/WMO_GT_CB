@@ -20,14 +20,14 @@
 # resolve automatically on Windows.
 #
 # Usage:
-#   .\run_ef5.ps1                         # run conf/control.txt
+#   .\run_ef5.ps1                         # run conf/control_900m.txt
 #   .\run_ef5.ps1 -Control my_control.txt # run conf/my_control.txt
 #   .\run_ef5.ps1 -Bash                   # interactive shell
 #
 # The image is ensured via docker/build_ef5.ps1 (reuse / load / build).
 # ============================================================================
 param(
-    [string]$Control = "control.txt",
+    [string]$Control = "control_900m.txt",
     [switch]$Bash
 )
 

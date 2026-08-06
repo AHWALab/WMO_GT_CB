@@ -8,7 +8,7 @@
 #   ./output  -> /output  (EF5 results: maxq/maxunitq/ts*.tif, timeseries csv)
 #   ./conf    -> /conf    (EF5 control file, mounted read-only)
 #
-# Paths inside conf/control.txt are relative to the container root (/), e.g.
+# Paths inside conf/control_900m.txt are relative to the container root (/), e.g.
 #   DEM=data/basic/DEM_guatemala_900m.tif
 #   OUTPUT=output/
 #   STATES=data/states/
@@ -19,7 +19,7 @@
 #   Windows        -> use run_ef5.ps1 or `docker compose run --rm ef5`
 #
 # Usage:
-#   ./run_ef5.sh                          # run with conf/control.txt
+#   ./run_ef5.sh                          # run with conf/control_900m.txt
 #   ./run_ef5.sh conf/my_control.txt      # run with a different control file
 #   ./run_ef5.sh --bash                   # interactive shell (inspect data)
 #
@@ -31,7 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 IMAGE_NAME="${EF5_IMAGE:-ef5-container:latest}"
-CONTROL_FILE="${1:-conf/control.txt}"
+CONTROL_FILE="${1:-conf/control_900m.txt}"
 
 # --- Detect OS ---------------------------------------------------------------
 OS="$(uname -s)"

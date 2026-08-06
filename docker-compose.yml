@@ -9,7 +9,7 @@
 #   ./conf   -> /conf    (EF5 control file, read-only)
 #
 # Usage (all platforms):
-#   docker compose run --rm ef5                         # run conf/control.txt
+#   docker compose run --rm ef5                         # run conf/control_900m.txt
 #   docker compose run --rm ef5 /bin/sh                 # interactive shell
 #   docker compose run --rm -e OMP_NUM_THREADS=8 ef5    # override threads
 #   docker compose build                                # build image from source
@@ -52,4 +52,4 @@ services:
         hard: 1048576
 
     working_dir: /
-    command: ["/ef5/bin/ef5", "/conf/control.txt"]
+    command: ["/ef5/bin/ef5", "/conf/control_900m.txt"]
