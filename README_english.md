@@ -5,6 +5,9 @@ model through a Docker container while **TITO_GuatemalaTraining stays
 untouched**. The EF5 image is the same `ef5-container` used by TITO; only the
 run layout differs.
 
+There are separate **domain** and **cuenca (gauge)** control files. Cuenca
+controls enable timeseries output at named gauges (e.g. Villalobos / Motagua).
+
 ## Folder layout
 
 ```text
@@ -22,13 +25,16 @@ EF5_GuatemalaTraining/
 │   │   └── 900m/                warm-start states for 900 m (crest_SM, kwr_*)
 │   └── precip/                  IMERG forcing: imerg.qpe.YYYYMMDDHHUU.30minAccum.tif
 ├── output/                      → mounted as /output (EF5 results)
-│   ├── 90m/                     results from the 90 m run
-│   └── 900m/                    results from the 900 m run
+│   ├── 900m/                    results — full-domain 900 m run
+│   ├── 900m_cuenca/             results — 900 m run with named gauges
+│   └── 90m_cuenca/              results — 90 m run with named gauges
 ├── conf/                        → mounted as /conf  (control files, read-only)
-│   ├── control_90m.txt          EF5 control file — Guatemala 90 m
-│   ├── control_900m.txt         EF5 control file — Guatemala 900 m
-│   ├── Guatemala_90m_basin_new.txt   gauge/basin defs (inlined into control_90m.txt)
-│   └── Guatemala_900m_basin_new.txt  gauge/basin defs (inlined into control_900m.txt)
+│   ├── control_900m.txt         full-domain control — Guatemala 900 m
+│   ├── control_900m_cuenca.txt  gauge/cuenca control — Guatemala 900 m
+│   ├── control_90m_cuenca.txt   gauge/cuenca control — Guatemala 90 m
+│   └── basin_list/
+│       ├── Guatemala_900m_basin_new.txt
+│       └── Guatemala_90m_basin_new.txt
 ├── docker/
 │   ├── Dockerfile               builds ef5-container:latest from source (AHWALab/EF5)
 │   ├── build_ef5.sh             build/reuse (Linux & macOS)
@@ -51,7 +57,7 @@ in the control file is relative to `/`:
 | ----------- | -------------- | ------------------------------------------------ |
 | `./data`    | `/data`        | basic, parameters, pet, states, precip           |
 | `./output`  | `/output`      | EF5 outputs (maxq/maxunitq/ts.\*.tif, logs, csv) |
-| `./conf`    | `/conf`        | EF5 control files (90 m and 900 m)               |
+| `./conf`    | `/conf`        | EF5 control files                                |
 
 ## Build or reuse the image
 
@@ -68,7 +74,7 @@ in the control file is relative to `/`:
 **Windows (PowerShell)** — `docker\build_ef5.ps1` with the same flags:
 
 ```powershell
-.\docker\build_ef5.ps1                # reuse existing image / load archive / build
+.\docker\build_ef5.ps1
 .\docker\build_ef5.ps1 -Status
 .\docker\build_ef5.ps1 -Rebuild
 .\docker\build_ef5.ps1 -Load
@@ -79,30 +85,30 @@ Reuse order: already-loaded local image → `docker/ef5-container.tar` archive
 (needs `git lfs pull` after a GitHub clone) → build from `docker/Dockerfile`
 (clones AHWALab/EF5 and compiles, a few minutes).
 
-## Run EF5 — Linux, Windows, macOS
+## Run EF5 — pick a control file
 
-There are **two control files** under `conf/`. Choose the resolution by passing
-the control path to the launcher:
+Pass the control path (must live under `conf/`):
 
 ```bash
 # Linux / macOS / WSL
-./run_ef5.sh conf/control_900m.txt    # Guatemala 900 m
-./run_ef5.sh conf/control_90m.txt     # Guatemala 90 m
-./run_ef5.sh --bash                   # interactive shell in the container
+./run_ef5.sh conf/control_900m.txt          # full domain, 900 m  → output/900m/
+./run_ef5.sh conf/control_900m_cuenca.txt   # gauges/cuenca, 900 m → output/900m_cuenca/
+./run_ef5.sh conf/control_90m_cuenca.txt    # gauges/cuenca, 90 m  → output/90m_cuenca/
+./run_ef5.sh --bash                         # interactive shell in the container
 ```
 
 ```powershell
 # Windows PowerShell (prefer a local C: path — not a mapped network drive)
-.\run_ef5.ps1 -Control control_900m.txt   # Guatemala 900 m
-.\run_ef5.ps1 -Control control_90m.txt    # Guatemala 90 m
-.\run_ef5.ps1 -Bash                       # interactive shell
+.\run_ef5.ps1 -Control control_900m.txt
+.\run_ef5.ps1 -Control control_900m_cuenca.txt
+.\run_ef5.ps1 -Control control_90m_cuenca.txt
+.\run_ef5.ps1 -Bash
 ```
 
-| Platform             | Command                                                          |
+| Platform             | Example                                                          |
 | -------------------- | ---------------------------------------------------------------- |
-| Linux / WSL          | `./run_ef5.sh conf/control_900m.txt` or `conf/control_90m.txt`   |
-| macOS                | same (`run_ef5.sh` auto-uses docker compose)                     |
-| Windows (PowerShell) | `.\run_ef5.ps1 -Control control_900m.txt` or `control_90m.txt`   |
+| Linux / WSL / macOS  | `./run_ef5.sh conf/control_90m_cuenca.txt`                       |
+| Windows (PowerShell) | `.\run_ef5.ps1 -Control control_90m_cuenca.txt`                  |
 | Any OS               | `docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt` |
 
 If no control file is passed, the default is `conf/control_900m.txt`.
@@ -111,16 +117,22 @@ macOS (Docker Desktop) has no host networking, so `run_ef5.sh` automatically
 delegates to `docker compose` there. Windows users can also run the `.sh`
 scripts from Git Bash/WSL.
 
-## Results
+## Control files and outputs
 
-Outputs are written under `./output/` according to the control resolution:
+| Control | Resolution | Purpose | Output folder | States |
+| ------- | ---------- | ------- | ------------- | ------ |
+| `conf/control_900m.txt` | 900 m | full domain | `./output/900m/` | `data/states/900m/` |
+| `conf/control_900m_cuenca.txt` | 900 m | named gauges / cuenca | `./output/900m_cuenca/` | `data/states/900m/` |
+| `conf/control_90m_cuenca.txt` | 90 m | named gauges / cuenca (e.g. Villalobos) | `./output/90m_cuenca/` | `data/states/90m/` |
 
-| Control | Output folder | States |
-| ------- | ------------- | ------ |
-| `conf/control_90m.txt` | `./output/90m/` | `data/states/90m/` |
-| `conf/control_900m.txt` | `./output/900m/` | `data/states/900m/` |
+Basin / gauge source lists (reference; already inlined into the control files
+where applicable) live under `conf/basin_list/`.
 
-Includes `maxq` / `maxunitq` / precip-accum grids and `ts.*.csv` timeseries.
+Cuenca controls set `outputts=true` on selected gauges so EF5 writes timeseries
+CSV under the matching `output/*_cuenca/` folder.
+
+Includes `maxq` / `maxunitq` / precip-accum grids (and soil moisture where
+enabled) plus `ts.*.csv` timeseries for gauges with `outputts=true`.
 
 Populate `data/precip/` with IMERG GeoTIFFs named
 `imerg.qpe.YYYYMMDDHHUU.30minAccum.tif` before a run with precipitation;

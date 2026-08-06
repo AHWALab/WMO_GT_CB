@@ -6,6 +6,10 @@ ejecuta el modelo hidrológico mediante un contenedor de Docker, mientras
 la misma (`ef5-container`) utilizada por TITO; únicamente cambia la organización
 de los archivos para la ejecución.
 
+Hay archivos de control de **dominio completo** y de **cuenca (estaciones)**.
+Los controles de cuenca habilitan series de tiempo en estaciones con nombre
+(p. ej. Villalobos / Motagua).
+
 ---
 
 ## Estructura de carpetas
@@ -25,13 +29,16 @@ EF5_GuatemalaTraining/
 │   │   └── 900m/                Estados de arranque 900 m (crest_SM, kwr_*)
 │   └── precip/                  Forzamiento IMERG: imerg.qpe.YYYYMMDDHHUU.30minAccum.tif
 ├── output/                      → montada como /output (resultados de EF5)
-│   ├── 90m/                     Resultados de la corrida 90 m
-│   └── 900m/                    Resultados de la corrida 900 m
+│   ├── 900m/                    resultados — corrida de dominio completo 900 m
+│   ├── 900m_cuenca/             resultados — 900 m con estaciones/cuenca
+│   └── 90m_cuenca/              resultados — 90 m con estaciones/cuenca
 ├── conf/                        → montada como /conf (archivos de control, solo lectura)
-│   ├── control_90m.txt          Archivo de control EF5 — Guatemala 90 m
-│   ├── control_900m.txt         Archivo de control EF5 — Guatemala 900 m
-│   ├── Guatemala_90m_basin_new.txt   Estaciones/cuencas 90 m (incluidas en control_90m.txt)
-│   └── Guatemala_900m_basin_new.txt  Estaciones/cuencas 900 m (incluidas en control_900m.txt)
+│   ├── control_900m.txt         control de dominio completo — Guatemala 900 m
+│   ├── control_900m_cuenca.txt  control con estaciones/cuenca — Guatemala 900 m
+│   ├── control_90m_cuenca.txt   control con estaciones/cuenca — Guatemala 90 m
+│   └── basin_list/
+│       ├── Guatemala_900m_basin_new.txt
+│       └── Guatemala_90m_basin_new.txt
 ├── docker/
 │   ├── Dockerfile               Construye ef5-container:latest desde el código fuente (AHWALab/EF5)
 │   ├── build_ef5.sh             Construcción/reutilización (Linux y macOS)
@@ -57,7 +64,7 @@ relativas a `/`.
 |--------------------|-----------------------|-----|
 | `./data` | `/data` | Datos de entrada: basic, parameters, pet, states y precip |
 | `./output` | `/output` | Resultados de EF5 (maxq, maxunitq, `ts.*.tif`, registros y CSV) |
-| `./conf` | `/conf` | Archivos de control de EF5 (90 m y 900 m) |
+| `./conf` | `/conf` | Archivos de control de EF5 |
 
 ---
 
@@ -95,30 +102,30 @@ El orden de reutilización es:
 
 ---
 
-## Ejecutar EF5 — Linux, Windows y macOS
+## Ejecutar EF5 — elegir un archivo de control
 
-Hay **dos archivos de control** en `conf/`. Se elige la resolución pasando la
-ruta del control al lanzador:
+Pase la ruta del control (debe estar bajo `conf/`):
 
 ```bash
 # Linux / macOS / WSL
-./run_ef5.sh conf/control_900m.txt    # Guatemala 900 m
-./run_ef5.sh conf/control_90m.txt     # Guatemala 90 m
-./run_ef5.sh --bash                   # consola interactiva en el contenedor
+./run_ef5.sh conf/control_900m.txt          # dominio completo, 900 m  → output/900m/
+./run_ef5.sh conf/control_900m_cuenca.txt   # estaciones/cuenca, 900 m → output/900m_cuenca/
+./run_ef5.sh conf/control_90m_cuenca.txt    # estaciones/cuenca, 90 m  → output/90m_cuenca/
+./run_ef5.sh --bash                         # consola interactiva en el contenedor
 ```
 
 ```powershell
 # Windows PowerShell (preferible en unidad C: local — no en unidades de red mapeadas)
-.\run_ef5.ps1 -Control control_900m.txt   # Guatemala 900 m
-.\run_ef5.ps1 -Control control_90m.txt    # Guatemala 90 m
-.\run_ef5.ps1 -Bash                       # consola interactiva
+.\run_ef5.ps1 -Control control_900m.txt
+.\run_ef5.ps1 -Control control_900m_cuenca.txt
+.\run_ef5.ps1 -Control control_90m_cuenca.txt
+.\run_ef5.ps1 -Bash
 ```
 
-| Plataforma | Comando |
+| Plataforma | Ejemplo |
 |------------|---------|
-| Linux / WSL | `./run_ef5.sh conf/control_900m.txt` o `conf/control_90m.txt` |
-| macOS | igual (`run_ef5.sh` usa Docker Compose automáticamente) |
-| Windows (PowerShell) | `.\run_ef5.ps1 -Control control_900m.txt` o `control_90m.txt` |
+| Linux / WSL / macOS | `./run_ef5.sh conf/control_90m_cuenca.txt` |
+| Windows (PowerShell) | `.\run_ef5.ps1 -Control control_90m_cuenca.txt` |
 | Cualquier SO | `docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt` |
 
 Si no se pasa un archivo de control, el valor por defecto es
@@ -130,17 +137,23 @@ Windows también pueden ejecutar los scripts `.sh` desde Git Bash o WSL.
 
 ---
 
-## Resultados
+## Archivos de control y resultados
 
-Los resultados se escriben bajo `./output/` según la resolución del control:
+| Control | Resolución | Propósito | Carpeta de salida | Estados |
+|---------|------------|-----------|-------------------|---------|
+| `conf/control_900m.txt` | 900 m | dominio completo | `./output/900m/` | `data/states/900m/` |
+| `conf/control_900m_cuenca.txt` | 900 m | estaciones / cuenca | `./output/900m_cuenca/` | `data/states/900m/` |
+| `conf/control_90m_cuenca.txt` | 90 m | estaciones / cuenca (p. ej. Villalobos) | `./output/90m_cuenca/` | `data/states/90m/` |
 
-| Control | Carpeta de salida | Estados |
-|---------|-------------------|---------|
-| `conf/control_90m.txt` | `./output/90m/` | `data/states/90m/` |
-| `conf/control_900m.txt` | `./output/900m/` | `data/states/900m/` |
+Las listas de cuencas/estaciones de referencia (ya incluidas en los controles
+cuando corresponde) están en `conf/basin_list/`.
 
-Incluye grillas `maxq`, `maxunitq`, precipitación acumulada y series de tiempo
-(`ts.*.csv`).
+Los controles de cuenca marcan `outputts=true` en las estaciones seleccionadas
+para que EF5 escriba series de tiempo CSV en la carpeta `output/*_cuenca/`
+correspondiente.
+
+Incluye grillas `maxq`, `maxunitq`, precipitación acumulada (y humedad del suelo
+cuando está habilitada) y series `ts.*.csv` para estaciones con `outputts=true`.
 
 Antes de ejecutar una simulación con precipitación, coloque los GeoTIFF IMERG en:
 
