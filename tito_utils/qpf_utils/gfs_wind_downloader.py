@@ -14,7 +14,7 @@ GFS 850 hPa wind downloader with archive support (HTTP-based, no Herbie).
 └──────────────────────────────────────────────────────────────────────────┘
 
 Uses fast HEAD probe to check if a GFS cycle is on AWS before downloading.
-Downloads via AWS → NOMADS → GCS (same sources as download_gfs_winds.py).
+Downloads U/V 850 only: NOMADS filter → AWS/GCS .idx byte-range (not full GRIB).
 """
 
 # python tito_utils/qpf_utils/gfs_wind_downloader.py     --auto-out /Dedicated/Humberto/Naman/TITO_Caribbean_Comoros_VM/TITOCaribbeanAndComoros/gfs_wind     --lat-min -90 --lat-max 90 --lon-min -180 --lon-max 180     --workers 6     >> logs/gfs_wind_caribbean.log 2>&1 &
@@ -144,16 +144,35 @@ def _cycle_available(dt: datetime, cycle_hr: int, fxx: int = 0, timeout: int = 1
     except Exception:
         return False
 
-# ── File download ─────────────────────────────────────────────────────────
+# ── File download (U/V 850 only — never full multi-100MB GFS by default) ──
+def _is_grib_file(path: str, min_bytes: int = 200) -> bool:
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) < min_bytes:
+            return False
+        with open(path, "rb") as f:
+            return f.read(4) == b"GRIB"
+    except OSError:
+        return False
+
+
 def _download_file(url: str, outpath: str, max_retries: int = 2, timeout: int = 120) -> bool:
     for attempt in range(max_retries + 1):
         try:
             r = requests.get(url, timeout=timeout, stream=True)
             if r.status_code == 200:
-                with open(outpath, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                return True
+                tmp = outpath + ".part"
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            f.write(chunk)
+                if not _is_grib_file(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                else:
+                    os.replace(tmp, outpath)
+                    return True
             elif r.status_code == 404:
                 return False
             if attempt < max_retries:
@@ -163,18 +182,95 @@ def _download_file(url: str, outpath: str, max_retries: int = 2, timeout: int = 
                 time.sleep(2 ** attempt)
     return False
 
+
+def _parse_grib_idx_uv850(idx_text: str):
+    """Byte ranges for 850 mb UGRD + VGRD from NOAA .idx inventory."""
+    lines = [ln.strip() for ln in idx_text.splitlines() if ln.strip()]
+    entries = []
+    for ln in lines:
+        parts = ln.split(":")
+        if len(parts) < 5:
+            continue
+        try:
+            start = int(parts[1])
+        except ValueError:
+            continue
+        entries.append((start, parts[3].strip().upper(), parts[4].strip().lower()))
+    ranges = []
+    for i, (start, varname, level) in enumerate(entries):
+        if varname not in ("UGRD", "VGRD") or "850" not in level:
+            continue
+        end = entries[i + 1][0] - 1 if i + 1 < len(entries) else None
+        ranges.append((start, end))
+    return ranges
+
+
+def _download_grib_idx_subset(grib_url: str, outpath: str,
+                              max_retries: int = 2, timeout: int = 90) -> bool:
+    """HTTP Range pull of 850 hPa U/V messages only (~1–3 MB vs ~500 MB full)."""
+    idx_url = grib_url + ".idx"
+    for attempt in range(max_retries + 1):
+        try:
+            ir = requests.get(idx_url, timeout=timeout)
+            if ir.status_code == 404:
+                return False
+            if ir.status_code != 200:
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                continue
+            ranges = _parse_grib_idx_uv850(ir.text)
+            if len(ranges) < 2:
+                return False
+            tmp = outpath + ".part"
+            with open(tmp, "wb") as out_f:
+                for start, end in ranges:
+                    hdr = {"Range": f"bytes={start}-" if end is None else f"bytes={start}-{end}"}
+                    rr = requests.get(grib_url, headers=hdr, timeout=timeout, stream=True)
+                    if rr.status_code not in (200, 206):
+                        raise requests.exceptions.RequestException(f"range HTTP {rr.status_code}")
+                    for chunk in rr.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            out_f.write(chunk)
+            if not _is_grib_file(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                continue
+            os.replace(tmp, outpath)
+            return True
+        except requests.exceptions.RequestException:
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+    return False
+
+
 def _download_grib(dt: datetime, cycle_hr: int, fxx: int, outpath: str,
                    lat_min: float, lat_max: float, lon_min: float, lon_max: float) -> bool:
-    """Download GRIB2 via AWS → NOMADS → GCS. Returns True on success."""
-    if os.path.isfile(outpath) and os.path.getsize(outpath) > 100:
+    """Download 850 hPa U/V only: NOMADS → AWS idx → GCS idx (no full GRIB)."""
+    if _is_grib_file(outpath):
         return True
-    if _download_file(_aws_url(dt, cycle_hr, fxx), outpath):
+    # 1) NOMADS domain+var subset (smallest)
+    if _download_file(
+        _nomads_url(dt, cycle_hr, fxx, lat_min, lat_max, lon_min, lon_max),
+        outpath, timeout=90,
+    ):
         return True
-    if _download_file(_nomads_url(dt, cycle_hr, fxx, lat_min, lat_max, lon_min, lon_max),
-                      outpath, timeout=60):
+    # 2) AWS .idx byte-range (U/V 850 messages only)
+    aws = _aws_url(dt, cycle_hr, fxx)
+    if _download_grib_idx_subset(aws, outpath):
         return True
-    if _download_file(_gcs_url(dt, cycle_hr, fxx), outpath):
+    # 3) GCS .idx byte-range
+    if _download_grib_idx_subset(_gcs_url(dt, cycle_hr, fxx), outpath):
         return True
+    # 4) Full GRIB only if explicitly enabled (slow)
+    if os.environ.get("GFS_ALLOW_FULL_GRIB", "").strip() in ("1", "true", "TRUE", "yes"):
+        if _download_file(aws, outpath, timeout=300):
+            return True
+        if _download_file(_gcs_url(dt, cycle_hr, fxx), outpath, timeout=300):
+            return True
     return False
 
 # ── GRIB extraction ───────────────────────────────────────────────────────

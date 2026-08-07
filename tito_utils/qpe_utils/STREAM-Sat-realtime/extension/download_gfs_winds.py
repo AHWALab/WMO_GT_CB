@@ -78,7 +78,7 @@ log = logging.getLogger(__name__)
 
 def nomads_grib_filter_url(dt, cycle_hr, fxx,
                            lat_min, lat_max, lon_min, lon_max):
-
+    """NOMADS server-side subset: 850 hPa UGRD+VGRD over domain only (~tens of KB)."""
     date_str = dt.strftime("%Y%m%d")
     return (
         f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
@@ -117,22 +117,46 @@ def rda_info():
     )
 
 
+def _is_grib_file(path, min_bytes=200):
+    """True if path looks like GRIB2 (not HTML error / empty)."""
+    try:
+        p = Path(path)
+        if not p.is_file() or p.stat().st_size < min_bytes:
+            return False
+        with open(p, "rb") as f:
+            head = f.read(4)
+        return head == b"GRIB"
+    except OSError:
+        return False
+
+
 def download_file(url, outpath, max_retries=3, timeout=60):
     last_err = None
+    outpath = Path(outpath)
     for attempt in range(max_retries):
         try:
             r = requests.get(url, timeout=timeout, stream=True)
             if r.status_code == 200:
-                with open(outpath, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                size_kb = os.path.getsize(outpath) / 1024
-                return True
+                tmp = outpath.with_suffix(outpath.suffix + ".part")
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            f.write(chunk)
+                if not _is_grib_file(tmp):
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except TypeError:
+                        if tmp.exists():
+                            tmp.unlink()
+                    last_err = "response not GRIB"
+                    log.debug("  non-GRIB response, retry %s/%s", attempt + 1, max_retries)
+                else:
+                    tmp.replace(outpath)
+                    return True
             elif r.status_code == 404:
                 return False  # File doesn't exist, no point retrying
             else:
                 last_err = f"HTTP {r.status_code}"
-                # Per-retry noise stays at DEBUG (TITO user console filters these)
                 log.debug("  HTTP %s, retry %s/%s", r.status_code, attempt + 1, max_retries)
         except requests.exceptions.RequestException as e:
             last_err = str(e)
@@ -143,37 +167,148 @@ def download_file(url, outpath, max_retries=3, timeout=60):
     return False
 
 
+def _parse_grib_idx_uv850(idx_text):
+    """
+    Parse NOAA GFS .idx inventory; return byte ranges for 850 mb UGRD + VGRD.
+
+    Idx line format:
+      msg:start_byte:d=...:VAR:level:ftime:
+    """
+    lines = [ln.strip() for ln in idx_text.splitlines() if ln.strip()]
+    entries = []
+    for ln in lines:
+        parts = ln.split(":")
+        if len(parts) < 5:
+            continue
+        try:
+            start = int(parts[1])
+        except ValueError:
+            continue
+        varname = parts[3].strip().upper()
+        level = parts[4].strip().lower()
+        entries.append((start, varname, level))
+
+    ranges = []
+    for i, (start, varname, level) in enumerate(entries):
+        if varname not in ("UGRD", "VGRD"):
+            continue
+        if "850" not in level:
+            continue
+        if i + 1 < len(entries):
+            end = entries[i + 1][0] - 1
+        else:
+            end = None  # open-ended range to EOF
+        ranges.append((start, end))
+    return ranges
+
+
+def download_grib_idx_subset(grib_url, outpath, max_retries=3, timeout=60):
+    """
+    Download only 850 hPa U/V GRIB messages via HTTP Range on AWS/GCS.
+
+    Full 0.25° GFS GRIB is ~500+ MB; U/V 850 only is typically ~1–3 MB.
+    """
+    outpath = Path(outpath)
+    idx_url = grib_url + ".idx"
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            ir = requests.get(idx_url, timeout=timeout)
+            if ir.status_code == 404:
+                return False
+            if ir.status_code != 200:
+                last_err = f"idx HTTP {ir.status_code}"
+                time.sleep(2 ** attempt)
+                continue
+            ranges = _parse_grib_idx_uv850(ir.text)
+            if len(ranges) < 2:
+                last_err = f"idx missing U/V 850 (got {len(ranges)} msgs)"
+                log.debug("  %s", last_err)
+                return False
+
+            tmp = outpath.with_suffix(outpath.suffix + ".part")
+            with open(tmp, "wb") as out_f:
+                for start, end in ranges:
+                    if end is None:
+                        hdr = {"Range": f"bytes={start}-"}
+                    else:
+                        hdr = {"Range": f"bytes={start}-{end}"}
+                    rr = requests.get(grib_url, headers=hdr, timeout=timeout, stream=True)
+                    if rr.status_code not in (200, 206):
+                        last_err = f"range HTTP {rr.status_code}"
+                        raise requests.exceptions.RequestException(last_err)
+                    for chunk in rr.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            out_f.write(chunk)
+
+            if not _is_grib_file(tmp):
+                try:
+                    tmp.unlink(missing_ok=True)
+                except TypeError:
+                    if tmp.exists():
+                        tmp.unlink()
+                last_err = "subset not GRIB"
+                time.sleep(2 ** attempt)
+                continue
+            tmp.replace(outpath)
+            return True
+        except requests.exceptions.RequestException as e:
+            last_err = str(e)
+            log.debug("  idx-subset error (retry %s/%s): %s", attempt + 1, max_retries, e)
+            time.sleep(2 ** attempt)
+    if last_err:
+        log.debug("  idx-subset failed: %s", last_err)
+    return False
+
+
 def download_gfs_grib(dt, cycle_hr, fxx, outpath):
-    if outpath.exists() and outpath.stat().st_size > 100:
+    """
+    Fetch 850 hPa U/V only (never the full multi-hundred-MB GFS GRIB by default).
+
+    Order:
+      1. NOMADS filter — domain + U/V 850 (smallest, realtime)
+      2. AWS .idx byte-range — U/V 850 messages only (archive-friendly)
+      3. GCS .idx byte-range — same
+      4. Full GRIB only if GFS_ALLOW_FULL_GRIB=1 (slow; last resort)
+    """
+    outpath = Path(outpath)
+    if outpath.exists() and _is_grib_file(outpath):
         log.debug("  [cached] %s", outpath.name)
         return True
 
-    # 1. Try AWS S3 (full file, fast and reliable)
-    url = aws_url(dt, cycle_hr, fxx)
-    log.debug("  Trying AWS... %s %02dZ f%03d", dt.strftime("%Y%m%d"), cycle_hr, fxx)
-    if download_file(url, outpath, timeout=120):
-        size_kb = outpath.stat().st_size / 1024
-        log.debug("  [AWS] %.0f KB", size_kb)
-        return True
-
-    # 2. Try NOMADS GRIB filter (tiny download, server-side subset)
+    # 1. NOMADS server-side subset (tiny)
     url = nomads_grib_filter_url(dt, cycle_hr, fxx, **DOMAIN)
-    log.debug("  AWS unavailable, trying NOMADS...")
-    if download_file(url, outpath):
-        size_kb = outpath.stat().st_size / 1024
-        log.debug("  [NOMADS] %.0f KB", size_kb)
+    log.debug("  Trying NOMADS subset... %s %02dZ f%03d", dt.strftime("%Y%m%d"), cycle_hr, fxx)
+    if download_file(url, outpath, timeout=90):
+        log.debug("  [NOMADS] %.0f KB", outpath.stat().st_size / 1024)
         return True
 
-    # 3. Try Google Cloud Storage
-    url = gcs_url(dt, cycle_hr, fxx)
-    log.debug("  NOMADS unavailable, trying Google Cloud...")
-    if download_file(url, outpath, timeout=120):
-        size_kb = outpath.stat().st_size / 1024
-        log.debug("  [GCS] %.0f KB", size_kb)
+    # 2. AWS inventory + Range (U/V 850 only)
+    aws = aws_url(dt, cycle_hr, fxx)
+    log.debug("  Trying AWS idx subset...")
+    if download_grib_idx_subset(aws, outpath, timeout=90):
+        log.debug("  [AWS-idx] %.0f KB", outpath.stat().st_size / 1024)
         return True
+
+    # 3. GCS inventory + Range
+    gcs = gcs_url(dt, cycle_hr, fxx)
+    log.debug("  Trying GCS idx subset...")
+    if download_grib_idx_subset(gcs, outpath, timeout=90):
+        log.debug("  [GCS-idx] %.0f KB", outpath.stat().st_size / 1024)
+        return True
+
+    # 4. Optional full-file fallback (disabled by default — multi-100 MB each)
+    if os.environ.get("GFS_ALLOW_FULL_GRIB", "").strip() in ("1", "true", "TRUE", "yes"):
+        log.warning("  GFS_ALLOW_FULL_GRIB set — downloading FULL GRIB (slow/large)")
+        if download_file(aws, outpath, timeout=300):
+            log.debug("  [AWS-full] %.0f KB", outpath.stat().st_size / 1024)
+            return True
+        if download_file(gcs, outpath, timeout=300):
+            log.debug("  [GCS-full] %.0f KB", outpath.stat().st_size / 1024)
+            return True
 
     log.debug(
-        "  FAILED: Could not download %s %02dZ f%03d",
+        "  FAILED: Could not download U/V 850 %s %02dZ f%03d",
         dt.strftime("%Y%m%d"), cycle_hr, fxx,
     )
     return False
@@ -288,7 +423,7 @@ def interpolate_temporal(data_hourly, times_hourly, dt_target=30):
 
     return data_hh, times_hh
 
-def process_event(event_key, event_cfg, max_workers=6):
+def process_event(event_key, event_cfg, max_workers=12):
 
     name = event_cfg["name"]
     dt_start = event_cfg["start"]
@@ -543,7 +678,7 @@ def main():
                         help="Override output directory")
     parser.add_argument("--skip-download", action="store_true",
                         help="Skip download, process existing GRIB files only")
-    parser.add_argument("--workers", type=int, default=6,
+    parser.add_argument("--workers", type=int, default=12,
                         help="Number of parallel download threads (default: 6)")
     args = parser.parse_args()
 
