@@ -16,7 +16,7 @@
 # Platforms:
 #   Linux          -> optimized docker run (host networking, full resources)
 #   macOS          -> docker compose (Docker Desktop has no host networking)
-#   Windows        -> use run_ef5.ps1 or `docker compose run --rm ef5`
+#   Windows        -> use run_ef5.cmd or `docker compose run --rm ef5`
 #
 # Usage:
 #   ./run_ef5.sh                          # run with conf/control_900m.txt
@@ -38,8 +38,8 @@ OS="$(uname -s)"
 case "$OS" in
     Darwin) PLATFORM="macos" ;;
     MINGW*|MSYS*|CYGWIN*)
-        echo "Windows detected — use the PowerShell launcher instead:" >&2
-        echo "    .\\run_ef5.ps1" >&2
+        echo "Windows detected — use the CMD launcher instead:" >&2
+        echo "    run_ef5.cmd -Control control_900m.txt" >&2
         echo "  or directly: docker compose run --rm ef5" >&2
         exit 1
         ;;

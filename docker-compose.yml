@@ -17,7 +17,7 @@
 #
 # Convenience wrappers (recommended):
 #   ./run_ef5.sh        # Linux / macOS / WSL
-#   run_ef5.ps1         # Windows PowerShell
+#   run_ef5.cmd         # Windows CMD
 # ============================================================================
 
 services:

@@ -6,7 +6,7 @@ untouched**. The EF5 image is the same `ef5-container` used by TITO; only the
 run layout differs.
 
 There are separate **domain** and **cuenca (gauge)** control files. Cuenca
-controls enable timeseries output at named gauges (e.g. Villalobos / Motagua).
+controls enable timeseries output at named gauges (e.g. Villalobos).
 
 ## Folder layout
 
@@ -38,20 +38,18 @@ EF5_GuatemalaTraining/
 ├── docker/
 │   ├── Dockerfile               builds ef5-container:latest from source (AHWALab/EF5)
 │   ├── build_ef5.sh             build/reuse (Linux & macOS)
-│   ├── build_ef5.ps1            build/reuse (Windows PowerShell)
-│   ├── build_ef5.cmd            Windows launcher (bypasses execution policy)
+│   ├── build_ef5.cmd            build/reuse (Windows CMD — no PowerShell)
 │   └── ef5-container.tar        prebuilt image archive (Git LFS / offline reuse)
 ├── docker-compose.yml           cross-platform launcher (works on all 3 OSes)
 ├── run_ef5.sh                   run EF5 (Linux / macOS / WSL)
-├── run_ef5.ps1                  run EF5 (Windows PowerShell)
-├── run_ef5.cmd                  Windows launcher (bypasses execution policy)
+├── run_ef5.cmd                  run EF5 (Windows CMD — no PowerShell)
 ├── README_english.md
 └── README.md
 ```
 
 ## How the container accesses the folders
 
-`run_ef5.sh` / `run_ef5.ps1` / `docker-compose.yml` bind-mount the three
+`run_ef5.sh` / `run_ef5.cmd` / `docker-compose.yml` bind-mount the three
 folders into the container and run EF5 from the container root, so every path
 in the control file is relative to `/`:
 
@@ -63,7 +61,7 @@ in the control file is relative to `/`:
 
 ## Build or reuse the image
 
-**Linux / macOS** — `docker/build_ef5.sh` never forces a rebuild unless you ask:
+**Linux / macOS** — `docker/build_ef5.sh`:
 
 ```bash
 ./docker/build_ef5.sh                 # reuse existing image / load archive / build
@@ -73,57 +71,63 @@ in the control file is relative to `/`:
 ./docker/build_ef5.sh --save          # snapshot current image → docker/ef5-container.tar
 ```
 
-**Windows (PowerShell)** — `docker\build_ef5.ps1` with the same flags:
+**Windows (Command Prompt)** — pure CMD, no PowerShell:
 
-```powershell
-.\docker\build_ef5.ps1
-.\docker\build_ef5.ps1 -Status
-.\docker\build_ef5.ps1 -Rebuild
-.\docker\build_ef5.ps1 -Load
-.\docker\build_ef5.ps1 -Save
+```bat
+docker\build_ef5.cmd
+docker\build_ef5.cmd -Status
+docker\build_ef5.cmd -Load
+docker\build_ef5.cmd -Rebuild
+docker\build_ef5.cmd -Save
 ```
 
 Reuse order: already-loaded local image → `docker/ef5-container.tar` archive
 (needs `git lfs pull` after a GitHub clone) → build from `docker/Dockerfile`
 (clones AHWALab/EF5 and compiles, a few minutes).
 
+After clone, check the tar is real (~318 MB), not a 134-byte LFS pointer:
+
+```bat
+dir docker\ef5-container.tar
+git lfs pull
+```
+
 ## Run EF5 — pick a control file
 
-Pass the control path (must live under `conf/`):
+**Linux / macOS / WSL:**
 
 ```bash
-# Linux / macOS / WSL
 ./run_ef5.sh conf/control_900m.txt          # full domain, 900 m  → output/900m/
 ./run_ef5.sh conf/control_900m_cuenca.txt   # gauges/cuenca, 900 m → output/900m_cuenca/
 ./run_ef5.sh conf/control_90m_cuenca.txt    # gauges/cuenca, 90 m  → output/90m_cuenca/
 ./run_ef5.sh --bash                         # interactive shell in the container
 ```
 
-```powershell
-# Windows PowerShell (prefer a local C: path — not a mapped network drive)
-.\run_ef5.ps1 -Control control_900m.txt
-.\run_ef5.ps1 -Control control_900m_cuenca.txt
-.\run_ef5.ps1 -Control control_90m_cuenca.txt
-.\run_ef5.ps1 -Bash
+**Windows (Command Prompt)** — prefer a **local** path (e.g. `C:\...`), not a mapped network drive:
+
+```bat
+run_ef5.cmd -Control control_900m.txt
+run_ef5.cmd -Control control_900m_cuenca.txt
+run_ef5.cmd -Control control_90m_cuenca.txt
+run_ef5.cmd -Bash
 ```
 
-| Platform             | Example                                                          |
-| -------------------- | ---------------------------------------------------------------- |
-| Linux / WSL / macOS  | `./run_ef5.sh conf/control_90m_cuenca.txt`                       |
-| Windows (PowerShell) | `.\run_ef5.ps1 -Control control_90m_cuenca.txt`                  |
-| Any OS               | `docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt` |
+| Platform            | Example                                                           |
+| ------------------- | ----------------------------------------------------------------- |
+| Linux / WSL / macOS | `./run_ef5.sh conf/control_90m_cuenca.txt`                        |
+| Windows (CMD)       | `run_ef5.cmd -Control control_90m_cuenca.txt`                     |
+| Any OS              | `docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt` |
 
 If no control file is passed, the default is `conf/control_900m.txt`.
 
 macOS (Docker Desktop) has no host networking, so `run_ef5.sh` automatically
-delegates to `docker compose` there. Windows users can also run the `.sh`
-scripts from Git Bash/WSL.
+delegates to `docker compose` there.
 
 ## Control files and outputs
 
 | Control | Resolution | Purpose | Output folder | States |
 | ------- | ---------- | ------- | ------------- | ------ |
-| `conf/control_900m.txt` | 900 m | full domain | `./output/900m/` | `data/states/900m/` |
+| `conf/control_900m.txt` | 900 m | full domain (+ Villalobos gauges) | `./output/900m/` | `data/states/900m/` |
 | `conf/control_900m_cuenca.txt` | 900 m | named gauges / cuenca | `./output/900m_cuenca/` | `data/states/900m/` |
 | `conf/control_90m_cuenca.txt` | 90 m | named gauges / cuenca (e.g. Villalobos) | `./output/90m_cuenca/` | `data/states/90m/` |
 
@@ -140,69 +144,23 @@ Populate `data/precip/` with IMERG GeoTIFFs named
 `imerg.qpe.YYYYMMDDHHUU.30minAccum.tif` before a run with precipitation;
 missing files are treated as zero precipitation.
 
+## Windows notes
 
-## Windows notes (execution policy & network drives)
-
-Cloned `.ps1` scripts are often **blocked** on Windows when:
-
-- the repo lives on a **mapped/network drive** (e.g. `X:\`), or
-- PowerShell policy is `RemoteSigned` / `AllSigned`.
-
-**Prefer the `.cmd` launchers** (they force `-ExecutionPolicy Bypass`):
+- Use **Command Prompt** with `run_ef5.cmd` / `docker\build_ef5.cmd` (no PowerShell scripts).
+- **Docker bind mounts** from mapped network drives (`X:`) often fail or appear
+  empty inside the container. Copy the repo to a **local** folder first:
 
 ```bat
-REM from repo root (Command Prompt or PowerShell)
-docker\build_ef5.cmd -Status
-docker\build_ef5.cmd -Load
-docker\build_ef5.cmd -Rebuild
-
-run_ef5.cmd -Control control_900m.txt
-run_ef5.cmd -Control control_90m_cuenca.txt
-```
-
-**Important:** if `.ps1` is still blocked even with Bypass, your PC may enforce
-PowerShell via **Group Policy**. Use the pure-CMD launchers (no PowerShell):
-
-```bat
-docker\build_ef5.cmd -Status
+xcopy /E /I X:\WMO_GT_CB-Day1_EF5\WMO_GT_CB-Day1_EF5 C:\EF5_GuatemalaTraining
+cd /d C:\EF5_GuatemalaTraining
+git lfs pull
 docker\build_ef5.cmd -Load
 run_ef5.cmd -Control control_900m.txt
 ```
 
-Or call Docker directly (no scripts at all):
+- Direct Docker (no launchers):
 
 ```bat
 docker load -i docker\ef5-container.tar
 docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt
-```
-
-
-PowerShell switches use a **single** dash: `-Rebuild`, `-Load`, `-Status`
-(not `--Rebuild`).
-
-If you must run the `.ps1` directly:
-
-```powershell
-# This session only (no Admin)
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-
-# Unblock files marked "from the Internet"
-Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
-
-.\docker\build_ef5.ps1 -Rebuild
-```
-
-`Set-ExecutionPolicy RemoteSigned` is **not enough** for scripts on `X:` —
-PowerShell treats network paths as remote and still requires a signature.
-Use `Bypass` (Process or CurrentUser) or the `.cmd` wrappers.
-
-**Docker bind mounts** from mapped network drives (`X:`) often fail or appear
-empty inside the container. Copy the repo to a **local** folder first:
-
-```powershell
-Copy-Item -Recurse X:\WMO_GT_CB-Day1_EF5\WMO_GT_CB-Day1_EF5 C:\EF5_GuatemalaTraining
-cd C:\EF5_GuatemalaTraining
-git lfs pull
-docker\build_ef5.cmd -Load
-run_ef5.cmd -Control control_900m.txt
 ```

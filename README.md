@@ -8,7 +8,7 @@ de los archivos para la ejecución.
 
 Hay archivos de control de **dominio completo** y de **cuenca (estaciones)**.
 Los controles de cuenca habilitan series de tiempo en estaciones con nombre
-(p. ej. Villalobos / Motagua).
+(p. ej. Villalobos).
 
 ---
 
@@ -42,13 +42,11 @@ EF5_GuatemalaTraining/
 ├── docker/
 │   ├── Dockerfile               Construye ef5-container:latest desde el código fuente (AHWALab/EF5)
 │   ├── build_ef5.sh             Construcción/reutilización (Linux y macOS)
-│   ├── build_ef5.ps1            Construcción/reutilización (Windows PowerShell)
-│   ├── build_ef5.cmd            Lanzador Windows (evita la política de ejecución)
+│   ├── build_ef5.cmd            Construcción/reutilización (Windows CMD — sin PowerShell)
 │   └── ef5-container.tar        Archivo de imagen precompilada (Git LFS / uso sin conexión)
 ├── docker-compose.yml           Lanzador multiplataforma (Linux, macOS y Windows)
 ├── run_ef5.sh                   Ejecuta EF5 (Linux / macOS / WSL)
-├── run_ef5.ps1                  Ejecuta EF5 (Windows PowerShell)
-├── run_ef5.cmd                  Lanzador Windows (evita la política de ejecución)
+├── run_ef5.cmd                  Ejecuta EF5 (Windows CMD — sin PowerShell)
 ├── README_english.md            Versión en inglés
 └── README.md
 ```
@@ -57,7 +55,7 @@ EF5_GuatemalaTraining/
 
 ## Cómo accede el contenedor a las carpetas
 
-Los scripts `run_ef5.sh`, `run_ef5.ps1` y `docker-compose.yml` montan las tres
+Los scripts `run_ef5.sh`, `run_ef5.cmd` y `docker-compose.yml` montan las tres
 carpetas principales dentro del contenedor y ejecutan EF5 desde la raíz del
 mismo. De esta forma, todas las rutas definidas en el archivo de control son
 relativas a `/`.
@@ -74,8 +72,6 @@ relativas a `/`.
 
 ### Linux / macOS
 
-El script `docker/build_ef5.sh` **no recompila la imagen a menos que se solicite explícitamente**.
-
 ```bash
 ./docker/build_ef5.sh                 # reutiliza la imagen existente / carga el archivo / compila
 ./docker/build_ef5.sh --status        # muestra qué imagen se utilizará
@@ -84,58 +80,66 @@ El script `docker/build_ef5.sh` **no recompila la imagen a menos que se solicite
 ./docker/build_ef5.sh --save          # guarda la imagen actual en docker/ef5-container.tar
 ```
 
-### Windows (PowerShell)
+### Windows (Símbolo del sistema / CMD)
 
-El script `docker\build_ef5.ps1` ofrece las mismas opciones:
+Solo CMD, **sin PowerShell**:
 
-```powershell
-.\docker\build_ef5.ps1
-.\docker\build_ef5.ps1 -Status
-.\docker\build_ef5.ps1 -Rebuild
-.\docker\build_ef5.ps1 -Load
-.\docker\build_ef5.ps1 -Save
+```bat
+docker\build_ef5.cmd
+docker\build_ef5.cmd -Status
+docker\build_ef5.cmd -Load
+docker\build_ef5.cmd -Rebuild
+docker\build_ef5.cmd -Save
 ```
 
-El orden de reutilización es:
+Orden de reutilización:
 
 1. Imagen local ya cargada.
 2. Archivo `docker/ef5-container.tar` (requiere `git lfs pull` si se clonó desde GitHub).
 3. Compilación desde `docker/Dockerfile` (clona AHWALab/EF5 y compila; tarda unos minutos).
 
+Tras clonar, compruebe que el tar es real (~318 MB), no un puntero LFS de 134 bytes:
+
+```bat
+dir docker\ef5-container.tar
+git lfs pull
+```
+
 ---
 
 ## Ejecutar EF5 — elegir un archivo de control
 
-Pase la ruta del control (debe estar bajo `conf/`):
+### Linux / macOS / WSL
 
 ```bash
-# Linux / macOS / WSL
 ./run_ef5.sh conf/control_900m.txt          # dominio completo, 900 m  → output/900m/
 ./run_ef5.sh conf/control_900m_cuenca.txt   # estaciones/cuenca, 900 m → output/900m_cuenca/
 ./run_ef5.sh conf/control_90m_cuenca.txt    # estaciones/cuenca, 90 m  → output/90m_cuenca/
 ./run_ef5.sh --bash                         # consola interactiva en el contenedor
 ```
 
-```powershell
-# Windows PowerShell (preferible en unidad C: local — no en unidades de red mapeadas)
-.\run_ef5.ps1 -Control control_900m.txt
-.\run_ef5.ps1 -Control control_900m_cuenca.txt
-.\run_ef5.ps1 -Control control_90m_cuenca.txt
-.\run_ef5.ps1 -Bash
+### Windows (CMD)
+
+Prefiera una ruta **local** (p. ej. `C:\...`), no una unidad de red mapeada:
+
+```bat
+run_ef5.cmd -Control control_900m.txt
+run_ef5.cmd -Control control_900m_cuenca.txt
+run_ef5.cmd -Control control_90m_cuenca.txt
+run_ef5.cmd -Bash
 ```
 
 | Plataforma | Ejemplo |
 |------------|---------|
 | Linux / WSL / macOS | `./run_ef5.sh conf/control_90m_cuenca.txt` |
-| Windows (PowerShell) | `.\run_ef5.ps1 -Control control_90m_cuenca.txt` |
+| Windows (CMD) | `run_ef5.cmd -Control control_90m_cuenca.txt` |
 | Cualquier SO | `docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt` |
 
 Si no se pasa un archivo de control, el valor por defecto es
 `conf/control_900m.txt`.
 
 En macOS (Docker Desktop) no existe el modo de red del host (*host networking*),
-por lo que `run_ef5.sh` utiliza automáticamente `docker compose`. Los usuarios de
-Windows también pueden ejecutar los scripts `.sh` desde Git Bash o WSL.
+por lo que `run_ef5.sh` utiliza automáticamente `docker compose`.
 
 ---
 
@@ -143,7 +147,7 @@ Windows también pueden ejecutar los scripts `.sh` desde Git Bash o WSL.
 
 | Control | Resolución | Propósito | Carpeta de salida | Estados |
 |---------|------------|-----------|-------------------|---------|
-| `conf/control_900m.txt` | 900 m | dominio completo | `./output/900m/` | `data/states/900m/` |
+| `conf/control_900m.txt` | 900 m | dominio completo (+ estaciones Villalobos) | `./output/900m/` | `data/states/900m/` |
 | `conf/control_900m_cuenca.txt` | 900 m | estaciones / cuenca | `./output/900m_cuenca/` | `data/states/900m/` |
 | `conf/control_90m_cuenca.txt` | 90 m | estaciones / cuenca (p. ej. Villalobos) | `./output/90m_cuenca/` | `data/states/90m/` |
 
@@ -166,71 +170,26 @@ data/precip/
 con el nombre `imerg.qpe.YYYYMMDDHHUU.30minAccum.tif`. Si falta algún archivo,
 EF5 lo trata como precipitación **cero**.
 
-
 ---
 
-## Notas para Windows (política de ejecución y unidades de red)
+## Notas para Windows
 
-Los scripts `.ps1` clonados suelen **bloquearse** en Windows cuando:
-
-- el repositorio está en una **unidad de red mapeada** (p. ej. `X:\`), o
-- la política de PowerShell es `RemoteSigned` / `AllSigned`.
-
-**Prefiera los lanzadores `.cmd`** (fuerzan `-ExecutionPolicy Bypass`):
+- Use el **Símbolo del sistema (CMD)** con `run_ef5.cmd` / `docker\build_ef5.cmd`
+  (no hay scripts PowerShell).
+- Los **bind mounts de Docker** desde unidades de red (`X:`) suelen fallar o
+  verse vacíos en el contenedor. Copie el repo a una carpeta **local** primero:
 
 ```bat
-REM desde la raíz del repositorio (CMD o PowerShell)
-docker\build_ef5.cmd -Status
-docker\build_ef5.cmd -Load
-docker\build_ef5.cmd -Rebuild
-
-run_ef5.cmd -Control control_900m.txt
-run_ef5.cmd -Control control_90m_cuenca.txt
-```
-
-**Importante:** si `.ps1` sigue bloqueado aunque use Bypass, el PC puede forzar
-PowerShell por **Directiva de grupo**. Use los lanzadores solo-CMD (sin PowerShell):
-
-```bat
-docker\build_ef5.cmd -Status
+xcopy /E /I X:\WMO_GT_CB-Day1_EF5\WMO_GT_CB-Day1_EF5 C:\EF5_GuatemalaTraining
+cd /d C:\EF5_GuatemalaTraining
+git lfs pull
 docker\build_ef5.cmd -Load
 run_ef5.cmd -Control control_900m.txt
 ```
 
-O llame a Docker directamente (sin scripts):
+- Docker directo (sin lanzadores):
 
 ```bat
 docker load -i docker\ef5-container.tar
 docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt
-```
-
-
-Los switches de PowerShell usan **un solo** guion: `-Rebuild`, `-Load`, `-Status`
-(no `--Rebuild`).
-
-Si debe ejecutar el `.ps1` directamente:
-
-```powershell
-# Solo esta sesión (sin Administrador)
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-
-# Desbloquear archivos marcados como "de Internet"
-Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
-
-.\docker\build_ef5.ps1 -Rebuild
-```
-
-`Set-ExecutionPolicy RemoteSigned` **no basta** para scripts en `X:` —
-PowerShell trata las rutas de red como remotas y sigue exigiendo firma.
-Use `Bypass` (Process o CurrentUser) o los wrappers `.cmd`.
-
-Los **bind mounts de Docker** desde unidades de red (`X:`) suelen fallar o
-verse vacíos en el contenedor. Copie el repo a una carpeta **local** primero:
-
-```powershell
-Copy-Item -Recurse X:\WMO_GT_CB-Day1_EF5\WMO_GT_CB-Day1_EF5 C:\EF5_GuatemalaTraining
-cd C:\EF5_GuatemalaTraining
-git lfs pull
-docker\build_ef5.cmd -Load
-run_ef5.cmd -Control control_900m.txt
 ```
