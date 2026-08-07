@@ -46,39 +46,47 @@ This builds:
 - `ef5-container:latest` — EF5 Docker image (sibling container via `docker.sock`)  
 - `EF5/bin/ef5` — small glibc EF5 binary (also used by Apptainer partners)
 
-**Or load pre-built images from Zenodo** (recommended for partners who should not rebuild):
+**Or use pre-built images (USB / pendrive — no rebuild)** — recommended for partners:
 
-> **Zenodo placeholder:** download the Docker image archives from  
-> `https://doi.org/10.5281/zenodo.XXXXXXXX` *(replace with the published deposit)*  
-> Expected files (example names):
-> - `tito_latest.tar.gz`
-> - `ef5-container_latest.tar.gz`
+1. Install and start **Docker Desktop** (Windows / macOS) or Docker Engine (Linux).
+2. Copy the project folder and place the image archives here:
 
-```sh
-gunzip -c tito_latest.tar.gz | docker load
-gunzip -c ef5-container_latest.tar.gz | docker load
+```
+dist/docker-archives/tito_latest.tar.gz
+dist/docker-archives/ef5-container_latest.tar.gz
 ```
 
-Large image tarballs are **not** hosted on GitHub (`dist/` is gitignored). Use Zenodo (or your own registry).
+3. Load once, then run:
 
-**Run (Docker):**
+| Platform | Load images (once) | Run |
+|---|---|---|
+| **Linux / macOS** | `./tito-run.sh load-images` | `./tito-run.sh operational --regions Guatemala` |
+| **Windows (CMD)** | `tito-run.cmd load-images` | `tito-run.cmd operational --regions Guatemala` |
+
+The launcher **auto-loads** missing images from `dist/` the first time you run.
+Manual load is still available via `load-images`.
 
 ```sh
-# All regions from Caribbean_Comoros_config.py (regions_to_run)
-TITO_RUNTIME=docker ./tito-run.sh operational
-
-# Single region
-TITO_RUNTIME=docker ./tito-run.sh operational --regions Guatemala
-
-# Hindcast (hourly steps from START → END inclusive)
-TITO_RUNTIME=docker ./tito-run.sh hindcast \
-    "2026-07-22 00:00" "2026-07-22 06:00"
-
-TITO_RUNTIME=docker ./tito-run.sh hindcast \
-    "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
+# Linux / macOS / Git Bash / WSL
+./tito-run.sh load-images
+./tito-run.sh operational --regions Guatemala
+./tito-run.sh hindcast "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
 ```
+
+```bat
+REM Windows cmd.exe / Docker Desktop — pure CMD (no PowerShell)
+tito-run.cmd load-images
+tito-run.cmd operational --regions Guatemala
+tito-run.cmd hindcast "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
+```
+
+Windows uses **pure CMD** (`tito-run.cmd` / `tito-run.bat`) so Group Policy / execution-policy
+blocks on unsigned `.ps1` scripts do not apply.
+
+Large image tarballs are **not** on GitHub (`dist/` is gitignored). Ship them on USB or Zenodo.
 
 EF5 runs as a **sibling** Docker container (`EF5_RUNTIME=docker`).
+On **macOS/Windows** Docker Desktop, host networking is not used (bridge); outbound downloads still work.
 
 ---
 
