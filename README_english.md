@@ -160,6 +160,23 @@ run_ef5.cmd -Control control_900m.txt
 run_ef5.cmd -Control control_90m_cuenca.txt
 ```
 
+**Important:** if `.ps1` is still blocked even with Bypass, your PC may enforce
+PowerShell via **Group Policy**. Use the pure-CMD launchers (no PowerShell):
+
+```bat
+docker\build_ef5.cmd -Status
+docker\build_ef5.cmd -Load
+run_ef5.cmd -Control control_900m.txt
+```
+
+Or call Docker directly (no scripts at all):
+
+```bat
+docker load -i docker\ef5-container.tar
+docker compose run --rm ef5 /ef5/bin/ef5 /conf/control_900m.txt
+```
+
+
 PowerShell switches use a **single** dash: `-Rebuild`, `-Load`, `-Status`
 (not `--Rebuild`).
 
