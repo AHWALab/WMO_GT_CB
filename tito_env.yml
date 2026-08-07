@@ -1,5 +1,5 @@
 # TITO ops environment (STREAM-Sat + StormLab + EF5 orchestration)
-# No PyTorch / CUDA — ConvLSTM nowcast path removed from Guatemala training.
+# No PyTorch/CUDA. Avoid Qt/OpenCV/OpenVINO (pysteps noise FFT does not need them).
 name: tito_env2
 channels:
   - conda-forge
@@ -20,6 +20,7 @@ dependencies:
   - pyproj
   - shapely
   - proj
+  # pysteps: noise FFT only in STREAM-Sat (no OpenCV features)
   - pysteps
   - tqdm
   - pyyaml

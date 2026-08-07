@@ -41,8 +41,18 @@ COPY tito_env.yml /tmp/tito_env.yml
 RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
     && conda env create -f /tmp/tito_env.yml \
+    && . /opt/conda/etc/profile.d/conda.sh \
+    && conda activate tito_env2 \
+    && conda remove -y --force \
+         pyside6 pyside6-essentials pyside6-addons \
+         qt6-main qt6-base qt-main pyqt pyqt5 pyqt6 \
+         opencv py-opencv libopencv libopencv-core \
+         openvino openvino-dev openvino-telemetry \
+         llvm-openmp-dev 2>/dev/null || true \
     && conda clean -afy \
     && find /opt/conda -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/conda/envs/tito_env2 -type d -name 'Qt*' -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/conda/envs/tito_env2 -type d -name 'PySide6' -exec rm -rf {} + 2>/dev/null || true \
     && rm -rf /opt/conda/pkgs
 
 SHELL ["/bin/bash", "-c"]
