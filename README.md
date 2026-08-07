@@ -43,10 +43,12 @@ EF5_GuatemalaTraining/
 │   ├── Dockerfile               Construye ef5-container:latest desde el código fuente (AHWALab/EF5)
 │   ├── build_ef5.sh             Construcción/reutilización (Linux y macOS)
 │   ├── build_ef5.ps1            Construcción/reutilización (Windows PowerShell)
+│   ├── build_ef5.cmd            Lanzador Windows (evita la política de ejecución)
 │   └── ef5-container.tar        Archivo de imagen precompilada (Git LFS / uso sin conexión)
 ├── docker-compose.yml           Lanzador multiplataforma (Linux, macOS y Windows)
 ├── run_ef5.sh                   Ejecuta EF5 (Linux / macOS / WSL)
 ├── run_ef5.ps1                  Ejecuta EF5 (Windows PowerShell)
+├── run_ef5.cmd                  Lanzador Windows (evita la política de ejecución)
 ├── README_english.md            Versión en inglés
 └── README.md
 ```
@@ -163,3 +165,55 @@ data/precip/
 
 con el nombre `imerg.qpe.YYYYMMDDHHUU.30minAccum.tif`. Si falta algún archivo,
 EF5 lo trata como precipitación **cero**.
+
+
+---
+
+## Notas para Windows (política de ejecución y unidades de red)
+
+Los scripts `.ps1` clonados suelen **bloquearse** en Windows cuando:
+
+- el repositorio está en una **unidad de red mapeada** (p. ej. `X:\`), o
+- la política de PowerShell es `RemoteSigned` / `AllSigned`.
+
+**Prefiera los lanzadores `.cmd`** (fuerzan `-ExecutionPolicy Bypass`):
+
+```bat
+REM desde la raíz del repositorio (CMD o PowerShell)
+docker\build_ef5.cmd -Status
+docker\build_ef5.cmd -Load
+docker\build_ef5.cmd -Rebuild
+
+run_ef5.cmd -Control control_900m.txt
+run_ef5.cmd -Control control_90m_cuenca.txt
+```
+
+Los switches de PowerShell usan **un solo** guion: `-Rebuild`, `-Load`, `-Status`
+(no `--Rebuild`).
+
+Si debe ejecutar el `.ps1` directamente:
+
+```powershell
+# Solo esta sesión (sin Administrador)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+# Desbloquear archivos marcados como "de Internet"
+Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
+
+.\docker\build_ef5.ps1 -Rebuild
+```
+
+`Set-ExecutionPolicy RemoteSigned` **no basta** para scripts en `X:` —
+PowerShell trata las rutas de red como remotas y sigue exigiendo firma.
+Use `Bypass` (Process o CurrentUser) o los wrappers `.cmd`.
+
+Los **bind mounts de Docker** desde unidades de red (`X:`) suelen fallar o
+verse vacíos en el contenedor. Copie el repo a una carpeta **local** primero:
+
+```powershell
+Copy-Item -Recurse X:\WMO_GT_CB-Day1_EF5\WMO_GT_CB-Day1_EF5 C:\EF5_GuatemalaTraining
+cd C:\EF5_GuatemalaTraining
+git lfs pull
+docker\build_ef5.cmd -Load
+run_ef5.cmd -Control control_900m.txt
+```

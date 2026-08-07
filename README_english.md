@@ -39,10 +39,12 @@ EF5_GuatemalaTraining/
 │   ├── Dockerfile               builds ef5-container:latest from source (AHWALab/EF5)
 │   ├── build_ef5.sh             build/reuse (Linux & macOS)
 │   ├── build_ef5.ps1            build/reuse (Windows PowerShell)
+│   ├── build_ef5.cmd            Windows launcher (bypasses execution policy)
 │   └── ef5-container.tar        prebuilt image archive (Git LFS / offline reuse)
 ├── docker-compose.yml           cross-platform launcher (works on all 3 OSes)
 ├── run_ef5.sh                   run EF5 (Linux / macOS / WSL)
 ├── run_ef5.ps1                  run EF5 (Windows PowerShell)
+├── run_ef5.cmd                  Windows launcher (bypasses execution policy)
 ├── README_english.md
 └── README.md
 ```
@@ -137,3 +139,53 @@ enabled) plus `ts.*.csv` timeseries for gauges with `outputts=true`.
 Populate `data/precip/` with IMERG GeoTIFFs named
 `imerg.qpe.YYYYMMDDHHUU.30minAccum.tif` before a run with precipitation;
 missing files are treated as zero precipitation.
+
+
+## Windows notes (execution policy & network drives)
+
+Cloned `.ps1` scripts are often **blocked** on Windows when:
+
+- the repo lives on a **mapped/network drive** (e.g. `X:\`), or
+- PowerShell policy is `RemoteSigned` / `AllSigned`.
+
+**Prefer the `.cmd` launchers** (they force `-ExecutionPolicy Bypass`):
+
+```bat
+REM from repo root (Command Prompt or PowerShell)
+docker\build_ef5.cmd -Status
+docker\build_ef5.cmd -Load
+docker\build_ef5.cmd -Rebuild
+
+run_ef5.cmd -Control control_900m.txt
+run_ef5.cmd -Control control_90m_cuenca.txt
+```
+
+PowerShell switches use a **single** dash: `-Rebuild`, `-Load`, `-Status`
+(not `--Rebuild`).
+
+If you must run the `.ps1` directly:
+
+```powershell
+# This session only (no Admin)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+# Unblock files marked "from the Internet"
+Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
+
+.\docker\build_ef5.ps1 -Rebuild
+```
+
+`Set-ExecutionPolicy RemoteSigned` is **not enough** for scripts on `X:` —
+PowerShell treats network paths as remote and still requires a signature.
+Use `Bypass` (Process or CurrentUser) or the `.cmd` wrappers.
+
+**Docker bind mounts** from mapped network drives (`X:`) often fail or appear
+empty inside the container. Copy the repo to a **local** folder first:
+
+```powershell
+Copy-Item -Recurse X:\WMO_GT_CB-Day1_EF5\WMO_GT_CB-Day1_EF5 C:\EF5_GuatemalaTraining
+cd C:\EF5_GuatemalaTraining
+git lfs pull
+docker\build_ef5.cmd -Load
+run_ef5.cmd -Control control_900m.txt
+```
