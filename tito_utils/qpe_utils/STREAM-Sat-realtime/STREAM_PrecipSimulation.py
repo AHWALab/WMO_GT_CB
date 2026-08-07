@@ -90,8 +90,11 @@ def simulatePrecip(dt,n_ens,ts,obsFile,noiseFile,paramsFile,CSGDW,tres,verbose=F
     
     # ---------------------  READ IN SATELLITE PRECIPITATION  -----------------
     ds = Dataset(obsFile)
-    d_start = num2date(ds.variables['time'][0],ds.variables['time'].units)
-    i1 = (dt - date( d_start.year, d_start.month,  d_start.day)).days*int(24/tres)  # starting index of IMERG data for simulation period
+    d_start = num2date(ds.variables['time'][0], ds.variables['time'].units,
+                       only_use_cftime_datetimes=False)
+    d0 = date(int(d_start.year), int(d_start.month), int(d_start.day))
+    steps_per_day = int(round(24.0 / float(tres)))
+    i1 = (dt - d0).days * steps_per_day  # starting index of IMERG for sim period
     i2 = i1 + ts   # ending index
     
 
@@ -124,9 +127,23 @@ def simulatePrecip(dt,n_ens,ts,obsFile,noiseFile,paramsFile,CSGDW,tres,verbose=F
         ds_dts = num2date(ds.variables['time'][:],units=ds.variables['time'].units,
                               only_use_cftime_datetimes=False)
         
-        ds_dts = np.array(list(datetime.strptime(str(d),'%Y-%m-%d %H:%M:%S') for d in ds_dts))
-        
-        i_start = int(np.where(ds_dts==datetime(dt.year,dt.month,dt.day))[0][:])
+        ds_dts = np.array([
+            datetime.strptime(str(d)[:19], "%Y-%m-%d %H:%M:%S") for d in ds_dts
+        ])
+
+        # Match first noise time on/after simulation start day (half-hourly files
+        # often start at 00:00 or 00:30 — exact midnight equality is fragile).
+        target = datetime(dt.year, dt.month, dt.day)
+        idxs = np.where(ds_dts >= target)[0]
+        if idxs.size == 0:
+            idxs = np.where(np.array([t.date() == target.date() for t in ds_dts]))[0]
+        if idxs.size == 0:
+            raise ValueError(
+                "No noise timestep matching %s in %s (range %s .. %s)"
+                % (target, noiseFile, ds_dts[0] if len(ds_dts) else None,
+                   ds_dts[-1] if len(ds_dts) else None)
+            )
+        i_start = int(idxs[0])
         i_end = i_start + ts
         
         q = ds.variables['q'][:n_ens,i_start:i_end,:,:].astype('float16')

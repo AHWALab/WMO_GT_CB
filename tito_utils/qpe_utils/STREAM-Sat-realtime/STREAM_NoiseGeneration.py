@@ -146,9 +146,12 @@ def getCorrNoiseAR1(n, dt,obsFile,windFile,seednum,tres):
     # MERRA2 files were downloaded from GES-DISC and aggregated to yearly files in writeWindNetcdfs.py
     dsw = Dataset(windFile)
     
-    # get number of hours between start of file and date dt at hour h
-    d_start = num2date(dsw.variables['time'][0],dsw.variables['time'].units)
-    ndw = int(24/tres)*(dt - date(d_start.year,d_start.month,d_start.day)).days 
+    # get number of half-hours between start of file and date dt
+    d_start = num2date(dsw.variables['time'][0], dsw.variables['time'].units,
+                       only_use_cftime_datetimes=False)
+    d0 = date(int(d_start.year), int(d_start.month), int(d_start.day))
+    steps_per_day = int(round(24.0 / float(tres)))
+    ndw = steps_per_day * (dt - d0).days
     #print('Wind file start: ',d_start,ndw)
     
     
@@ -161,9 +164,11 @@ def getCorrNoiseAR1(n, dt,obsFile,windFile,seednum,tres):
     dlat=np.median(dslon[1:]-dslon[0:-1])
 
     
-    # get number of hours between start of file and date dt at hour h
-    d_start = num2date(ds.variables['time'][0],ds.variables['time'].units)
-    nd = int(24/tres)*(dt - date(d_start.year,d_start.month,d_start.day)).days 
+    # get number of half-hours between start of file and date dt
+    d_start = num2date(ds.variables['time'][0], ds.variables['time'].units,
+                       only_use_cftime_datetimes=False)
+    d0 = date(int(d_start.year), int(d_start.month), int(d_start.day))
+    nd = steps_per_day * (dt - d0).days
     print(nd)
     print(dt)
     print(d_start)  # 2017-09-01 

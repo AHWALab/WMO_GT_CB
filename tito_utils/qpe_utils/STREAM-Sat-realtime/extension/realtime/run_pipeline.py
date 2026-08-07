@@ -166,7 +166,10 @@ def stage_fetch_gfs(cfg, start, end, scratch):
     archive_path = (cfg.get("gfs_wind_archive_path") or "").strip()
     if archive_path:
         try:
-            _tito_root = str(REPO_ROOT.parent)
+            # run_pipeline.py lives at:
+            #   .../tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/
+            # REPO_ROOT = STREAM-Sat-realtime → project root is 3 levels up
+            _tito_root = str(REPO_ROOT.parent.parent.parent)
             if _tito_root not in sys.path:
                 sys.path.insert(0, _tito_root)
             from tito_utils.qpf_utils.gfs_manager import GFS_wind_searcher
