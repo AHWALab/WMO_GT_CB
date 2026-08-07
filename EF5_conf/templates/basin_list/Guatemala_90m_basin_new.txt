@@ -9,6 +9,7 @@
 [Gauge cuenca_villalobos_out] lon=-90.67113695475938 lat=14.412713370268984 outputts=true
 
 [Basin 0]
-gauge=cuenca_motagua_1
-gauge=cuenca_motagua_2
+gauge=cuenca_villalobos_1
+gauge=cuenca_villalobos_2
+gauge=cuenca_villalobos_out
 gauge=1

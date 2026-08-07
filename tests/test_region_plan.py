@@ -106,7 +106,7 @@ def test_region_resolution_map_paths_and_template(tmp_path: Path):
     templates = tmp_path / "templates"
     templates.mkdir()
     (templates / "ef5_Guatemala_900m_control_template.txt").write_text("900m")
-    (templates / "ef5_Guatemala_control_template.txt").write_text("90m")
+    (templates / "ef5_Guatemala_90m_control_template.txt").write_text("90m")
 
     configs = build_region_configs(
         ["Guatemala"],

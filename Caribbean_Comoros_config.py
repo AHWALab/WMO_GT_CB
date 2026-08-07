@@ -16,7 +16,7 @@ model_resolution = "90m"
 #   EF5_conf/templates/basin_list/{Region}_{res}_basin_new.txt
 #   EF5_conf/templates/ef5_{Region}_{res}_control_template.txt (fallback: no _{res}_)
 #   EF5_conf/states|outputs …/{region}_{res}/  (e.g. guatemala_900m)
-region_resolution_map = {"Guatemala": "900m", "Barbados": "30m"}
+region_resolution_map = {"Guatemala": "90m", "Barbados": "30m"}
 # Optional explicit control-template override (else resolution-aware auto-select):
 # region_template_map = {"Guatemala": "ef5_Guatemala_900m_control_template.txt"}
 regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
@@ -67,7 +67,7 @@ modelStates = ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"]
 templatePath = "EF5_conf/templates/"
 templates = "ef5_Antigua_control_template.txt"  # last-resort fallback only
 # Auto-selected per region+resolution:
-#   ef5_Guatemala_900m_control_template.txt → else ef5_Guatemala_control_template.txt
+#   ef5_Guatemala_90m_control_template.txt / ef5_Guatemala_900m_control_template.txt
 basicPath = "EF5_conf/basic/"
 parametersPath = "EF5_conf/parameters/"
 dataPath = "outputs/"
@@ -171,7 +171,7 @@ warmup_precip_source_map = {
 # ── STREAM-Sat ensemble configuration ──────────────────────────────────────
 # Used when qpe_source == "STREAM_SAT" in region_forcing_map.
 # STREAM-Sat repo: tito_utils/qpe_utils/STREAM-Sat-realtime/
-stream_sat_ensemble_size = 5      # ← USER-TUNABLE (use 2 for test, 10 for ops)
+stream_sat_ensemble_size = 10      # ← USER-TUNABLE (use 2 for test, 10 for ops)
 
 # ── Informational only (STREAM-Sat pipeline internals — do not treat as knobs) ──
 # These are passed through to STREAM-Sat run_pipeline; values below match the
@@ -232,7 +232,7 @@ stormlab_output_folder = "outputs/stormlab/"
 #   forecast.operational_forcing_members = 5
 #     → 5 GEFS forcings × 10 seeds = 50 members
 # Pass stormlab_ensemble_size / stormlab_forcing_members to override.
-stormlab_ensemble_size = 3       # ← USER-TUNABLE (test=2, ops=10–50; default yaml=50)
+stormlab_ensemble_size = 5       # ← USER-TUNABLE (test=2, ops=10–50; default yaml=50)
 stormlab_forcing_members = 5     # GEFS forcings (default yaml=5; 1=control only for speed)
 stormlab_run_pipeline = True     # False → convert existing NC only (no StormLab run)
 stormlab_source = "auto"         # auto (GEFS→GFS fallback) | gefs | gfs

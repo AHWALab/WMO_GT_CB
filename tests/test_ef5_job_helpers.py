@@ -52,11 +52,11 @@ def test_region_path_key_and_resolution_map():
 
 def test_resolve_control_template_prefers_resolution(tmp_path: Path):
     (tmp_path / "ef5_Guatemala_900m_control_template.txt").write_text("900")
-    (tmp_path / "ef5_Guatemala_control_template.txt").write_text("90")
+    (tmp_path / "ef5_Guatemala_90m_control_template.txt").write_text("90")
     assert resolve_control_template(
         str(tmp_path), "Guatemala", "900m") == "ef5_Guatemala_900m_control_template.txt"
     assert resolve_control_template(
-        str(tmp_path), "Guatemala", "90m") == "ef5_Guatemala_control_template.txt"
+        str(tmp_path), "Guatemala", "90m") == "ef5_Guatemala_90m_control_template.txt"
 
 
 def test_resolve_control_template_override_and_fallback(tmp_path: Path):

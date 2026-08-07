@@ -168,7 +168,7 @@ Prefer `./tito-run.sh` with Docker or Apptainer for partner deployments.
 
 Region EF5 templates under `EF5_conf/templates/`:
 
-- `ef5_Guatemala_control_template.txt` (90m)
+- `ef5_Guatemala_90m_control_template.txt` (90m)
 - `ef5_Guatemala_900m_control_template.txt` (900m)
 
 Users must populate topographic and parameter grids for their region. See [EF5-builder-toolkit](https://github.com/AHWALab/EF5-builder-toolkit).
