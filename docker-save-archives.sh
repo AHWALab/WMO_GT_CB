@@ -63,7 +63,7 @@ save_one() {
     echo ""
     echo ">>> Saving $image"
     echo "    → $out"
-    echo "    (tito is ~8–15 GB compressed — can take several minutes)"
+    echo "    (slim tito image — save can still take a few minutes)"
     local tmp="${out}.partial"
     docker save "$image" | gzip -c > "$tmp"
     mv -f "$tmp" "$out"

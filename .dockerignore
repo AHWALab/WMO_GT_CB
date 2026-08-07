@@ -14,13 +14,21 @@ tito.sif
 *.sif
 dist/
 apptainer/
-# StormLab runtime products (code/params stay in image; NC output bind-mounted)
+# StormLab: code in image; heavy params/output bind-mounted via tito_utils at runtime
 tito_utils/qpf_utils/StormLab-GFS-realtime/output/
 tito_utils/qpf_utils/StormLab-GFS-realtime/WMO.zip
+tito_utils/qpf_utils/StormLab-GFS-realtime/params/
 tito_utils/qpf_utils/StormLab-GFS-realtime/**/__pycache__/
 tito_utils/qpe_utils/STREAM-Sat-realtime/**/__pycache__/
 tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/output/
 tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/state/
+tito_utils/qpe_utils/STREAM-Sat-realtime/**/*.pdf
+tito_utils/qpe_utils/STREAM-Sat-realtime/test/
+tests/
+trainings/
+*.cmd
+*.bat
+*.ps1
 
 # ── Git / IDE ──
 .git/

@@ -42,7 +42,7 @@ plus top-level `outputs/` are kept empty in git (`.gitkeep` only) and are filled
 
 This builds:
 
-- `tito:latest` — full TITO conda environment + code  
+- `tito:latest` — slim TITO conda env (no PyTorch/CUDA) + code  
 - `ef5-container:latest` — EF5 Docker image (sibling container via `docker.sock`)  
 - `EF5/bin/ef5` — small glibc EF5 binary (also used by Apptainer partners)
 
@@ -60,8 +60,8 @@ dist/docker-archives/ef5-container_latest.tar.gz
 
 | Platform | Load images (once) | Run |
 |---|---|---|
-| **Linux / macOS** | `./tito-run.sh load-images` | `./tito-run.sh operational --regions Guatemala` |
-| **Windows (CMD)** | `tito-run.cmd load-images` | `tito-run.cmd operational --regions Guatemala` |
+| **Linux / macOS** | `./load-docker-images.sh` or `./tito-run.sh load-images` | `./tito-run.sh operational --regions Guatemala` |
+| **Windows (CMD)** | `load-docker-images.cmd` or `tito-run.cmd load-images` | `tito-run.cmd operational --regions Guatemala` |
 
 The launcher **auto-loads** missing images from `dist/` the first time you run.
 Manual load is still available via `load-images`.

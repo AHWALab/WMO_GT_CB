@@ -96,7 +96,7 @@ if $BUILD_DOCKER; then
     fi
     echo ""
     echo ">>> STEP 2: Building TITO (tito:latest) ..."
-    echo "    Expect 10–20 min (conda + PyTorch)."
+    echo "    Expect ~10–15 min (slim conda env, no PyTorch/CUDA)."
     docker build $NO_CACHE -t tito:latest .
     echo ">>> TITO Docker image ready."
 else
