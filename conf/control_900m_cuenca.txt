@@ -30,14 +30,7 @@ NAME=PET.MM.tif
 TYPE=TIF
 
 #---Start Gauge-Basin Block
-[Gauge cuenca_villalobos_1] lon=-90.5353 lat=14.4878 outputts=true
-[Gauge cuenca_villalobos_2] lon=-90.5542 lat=14.4953 outputts=true
-[Gauge cuenca_villalobos_out] lon=-90.67113695475938 lat=14.4127 outputts=true
 
-[Basin 0]
-gauge=cuenca_villalobos_1
-gauge=cuenca_villalobos_2
-gauge=cuenca_villalobos_out
 
 #---End Gauge-Basin Block
 
