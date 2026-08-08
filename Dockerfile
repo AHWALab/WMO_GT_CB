@@ -18,14 +18,21 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# System deps — geospatial + GRIB only (no GUI / OpenCV / CUDA toolkit)
+# System deps:
+#   - docker.io CLI → spawn sibling ef5-container via docker.sock
+#   - libtiff5 / libgeotiff5 / libgomp1 → required by EF5/bin/ef5 when
+#     EF5_RUNTIME=local (Apptainer path or in-container glibc binary).
+#     Without these, EF5 exits 127: "libtiff.so.5: cannot open shared object file"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     ca-certificates \
     git \
-    # Docker CLI only (spawn sibling EF5 containers via docker.sock)
     docker.io \
+    libtiff5 \
+    libgeotiff5 \
+    libgomp1 \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 # Miniconda

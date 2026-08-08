@@ -821,7 +821,21 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
             f'"{ef5_bin}" "{control_rel}" '
             f'> "{log_abs}" 2>&1'
         )
-        return subprocess.call(cmd, shell=True, cwd=cwd)
+        rc = subprocess.call(cmd, shell=True, cwd=cwd)
+        if rc == 127:
+            # Common after slim image rebuild: missing libtiff/libgeotiff/libgomp
+            hint = (
+                f"EF5 local binary failed (exit 127) — usually a missing shared "
+                f"library (see {log_abs}). Rebuild tito image with libtiff5/"
+                f"libgeotiff5/libgomp1, or set EF5_RUNTIME=docker and use "
+                f"ef5-container:latest."
+            )
+            try:
+                with open(log_abs, "a", encoding="utf-8") as lf:
+                    lf.write("\n" + hint + "\n")
+            except OSError:
+                pass
+        return rc
 
     if runtime == "docker":
         # When TITO itself runs in Docker and spawns EF5 via docker.sock,
