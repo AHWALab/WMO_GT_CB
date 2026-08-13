@@ -1,0 +1,59 @@
+# Ensemble FIM configuration : Guatemala, Santa Ines Petapa pilot
+# Paths are relative to --root (the folder holding outputs/, 1_AOC/, ...).
+region: Guatemala_SantaInesPetapa
+
+outputs_root: ef5_outputs/outputs
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: aoc_santa_ines_5km_epsg4326.geojson
+store: fim_store_SantaInesPetapa_v1.zarr
+products_root: fim_out
+
+# Forecast members: 10 QPE ensembles x 5 StormLab storms = 50 runs
+member:
+  template: "stormlab/ensOut{ens}_sl{sl}/guatemala/tmp_output_crest_stormlab"
+
+# Rainfall total per member = sum of the three products (all EF5 PRECIPACCUM
+# grids), treated as the 24-h magnitude to match the RainyDay storms.
+components:
+  - name: qpe_streamsat
+    template: "stream_sat/ensOut{ens}/guatemala/tmp_output_crest_streamsat"
+    grid: qpe_accum
+  - name: qpe_scampr
+    template: "scampr/ensOut{ens}/guatemala/tmp_output_crest_gap_scampr"
+    grid: qpe_accum
+  - name: rain_stormlab
+    template: "stormlab/ensOut{ens}_sl{sl}/guatemala/tmp_output_crest_stormlab"
+    grid: qpe_accum          # stormlab runs ingest the 24-h forecast as PRECIP
+
+# Trigger: max unit streamflow over EVERY run of the cycle (observed QPE
+# branches and forecast branches alike); any pixel >= threshold fires.
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "stream_sat/ensOut{ens}/guatemala/tmp_output_crest_streamsat"
+    - template: "scampr/ensOut{ens}/guatemala/tmp_output_crest_gap_scampr"
+    - template: "stormlab/ensOut{ens}_sl{sl}/guatemala/tmp_output_crest_stormlab"
+
+files:
+  uq: "maxunitq.{cycle}.tif"
+  qpe_accum: "qpeaccum.{cycle}.tif"
+  qpf_accum: "qpfaccum.{cycle}.tif"
+
+# EF5 outputs are masked to the gauged Motagua basins; the AOC itself is
+# nodata, so sampling widens until valid cells are found and flags it.
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+
+matching:
+  band: [0.9, 1.2]
+  band_wide: [0.8, 1.3]
+
+probability:
+  depth_threshold_m: 0.30
+  bands:
+    very_low: [0.0, 0.2]
+    low: [0.2, 0.4]
+    medium: [0.4, 0.6]
+    high: [0.6, 1.01]

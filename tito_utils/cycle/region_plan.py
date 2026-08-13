@@ -67,10 +67,13 @@ def build_region_configs(
 
         # Legacy keys: match prior orchestrator exactly.
         # STREAM_SAT Phase A/B use data-driven ss_end from GeoTIFFs, not these.
-        imerg_offset = IMERG_LATENCY if qpe == "IMERG" else timedelta(0)
-        if qpe == "IMERG":
+        # Hindcast: full IMERG archive → QPE ends at T (no 4h latency gap).
+        # Operational IMERG: QPE ends at T−4h (Early product latency).
+        if qpe == "IMERG" and not hindcast_mode:
+            imerg_offset = IMERG_LATENCY
             r_imerg_end = ct - IMERG_LATENCY
         else:
+            imerg_offset = timedelta(0)
             r_imerg_end = ct
         r_state_end = ct - imerg_offset
         r_warm_end = ct - imerg_offset
@@ -94,6 +97,17 @@ def build_region_configs(
             default_template=default_template,
         )
 
+        # Separate state roots per product (match STREAM-Sat / StormLab pattern).
+        if qpe == "IMERG":
+            region_states = os.path.join(
+                getattr(config, "imerg_state_folder", "EF5_conf/states/imerg/"),
+                rkey,
+            )
+        else:
+            region_states = os.path.join(states_path, rkey)
+        # Cycle-first outputs: outputs/<cycle>/<region_res>/…
+        region_data = os.path.join(data_path, output_ts, rkey)
+
         region_configs[region] = {
             "region_key":           rkey,
             "region_slug":          region_slug,
@@ -114,8 +128,8 @@ def build_region_configs(
             "r_imerg_end":          r_imerg_end,
             "r_scampr_end":         ct,
             "cycle_time_key":       ct.strftime("%Y%m%d%H%M"),
-            "region_states_path":   os.path.join(states_path, rkey),
-            "region_data_path":     os.path.join(data_path, rkey),
+            "region_states_path":   region_states,
+            "region_data_path":     region_data,
             "region_qpf_store":     os.path.join(qpf_store_path, region_slug, ""),
             "cycle_plan":           plan,
         }

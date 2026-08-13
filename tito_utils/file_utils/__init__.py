@@ -1,4 +1,8 @@
-from .cleanup import cleanup_precip, cleanup_staged_precip_folders
+from .cleanup import (
+    cleanup_precip,
+    cleanup_staged_precip_folders,
+    cleanup_streamsat_outputs,
+)
 from .datetime_utils import (
     get_geotiff_datetime,
     extract_timestamp,
@@ -16,6 +20,7 @@ from .file_handling import (is_non_zero_file, mkdir_p, newline)
 __all__ = [
     'cleanup_precip',
     'cleanup_staged_precip_folders',
+    'cleanup_streamsat_outputs',
     'get_geotiff_datetime',
     'extract_timestamp',
     'extract_datetime_from_filename',

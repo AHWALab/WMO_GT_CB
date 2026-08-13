@@ -36,6 +36,17 @@ temp/
 logs/
 tito_utils/qpe_utils/STREAM-Sat-realtime/tmp*/
 
+# FIM runtime products (never commit)
+outputs/fim/
+fim_out*/
+fim_store/*.zarr/
+fim_store/**/*.zarr/
+
+# Offline precip archive (large; materialize locally)
+offline_precips/**/*.tif
+offline_precips/**/*.nc
+!offline_precips/README*
+
 # Raster/binary data files — never commit these (except basic/ and parameters/)
 *.tif
 *.tiff

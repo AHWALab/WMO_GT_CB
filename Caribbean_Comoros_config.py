@@ -16,7 +16,8 @@ model_resolution = "90m"
 #   EF5_conf/templates/basin_list/{Region}_{res}_basin_new.txt
 #   EF5_conf/templates/ef5_{Region}_{res}_control_template.txt (fallback: no _{res}_)
 #   EF5_conf/states|outputs …/{region}_{res}/  (e.g. guatemala_900m)
-region_resolution_map = {"Guatemala": "90m", "Barbados": "30m"}
+# region_resolution_map = {"Guatemala": "900m", "Barbados": "30m"}
+region_resolution_map = {"Guatemala": "90m"}
 # Optional explicit control-template override (else resolution-aware auto-select):
 # region_template_map = {"Guatemala": "ef5_Guatemala_900m_control_template.txt"}
 regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
@@ -97,16 +98,30 @@ qpf_source = "STORMLAB"
 #     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
 # }
 region_forcing_map = {
-    # STREAM-Sat QPE + StormLab ensemble QPF (3-phase EF5):
-    #   A) STREAM-Sat → EF5_conf/states/stream_sat/ensS*/
-    #   B) SCaMPR/HSAF gap → EF5_conf/states/scampr|hsaf/ensS*/  (ops only)
-    #   C) StormLab nested SS×SL forecast (no state save)
-    "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},  # StormLab domain: lesserantilles
-    "Barbados":  {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
-    "Guatemala": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
-    "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
-    "Comoros":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    # All forecast products run as QPE (Simulation_QPE) — never long-range PRECIPFORECAST.
+    #
+    # STREAM-Sat + StormLab (3-phase):
+    #   A) STREAM-Sat QPE + dry → states/stream_sat/ensS*/
+    #   B) SCaMPR/HSAF gap QPE + dry → states/scampr|hsaf/ensS*/  (ops only)
+    #   C) StormLab as QPE + dry (no state save)
+    #
+    # IMERG + GFS (3-phase, same idea):
+    #   A) IMERG QPE + dry → states/imerg/<region_res>/
+    #   B) SCaMPR gap QPE + dry → states/scampr_det/<region_res>/  (ops + IMERG_SCAMPR only)
+    #   C) GFS as QPE + dry from A or B states (no state save)
+    # "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    # "Barbados":  {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Guatemala": {"qpe_source": "IMERG", "qpf_source": "GFS"},
+    # "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    # "Comoros":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
 }
+
+# Deterministic IMERG path folders (optional overrides)
+imerg_state_folder = "EF5_conf/states/imerg/"
+# IMERG/scampr_det EF5 outs also use cycle-first layout under dataPath
+imerg_output_folder = "outputs/"
+det_scampr_state_folder = "EF5_conf/states/scampr_det/"
+det_scampr_output_folder = "outputs/"
 
 # ── STREAM-Sat gap-fill mode ───────────────────────────────────────────
 # When qpe_source == "STREAM_SAT", Phase B after STREAM-Sat:
@@ -143,7 +158,7 @@ warmup_enabled = True              # set to True to enable warmup
 # The simulation starts at (cycle_time - warmup_days days) and ends at
 # (cycle_time - 40 hours), saving states at (cycle_time - 40 hours).
 # Default: 10 days if not specified.
-warmup_days = 155
+warmup_days = 160
 
 # Parallel IMERG download threads (warmup + get_gpm_files batch).
 # 0 / unset → auto min(16, cpu*2).  Also: export IMERG_MAX_WORKERS=16
@@ -173,10 +188,20 @@ warmup_precip_source_map = {
 # STREAM-Sat repo: tito_utils/qpe_utils/STREAM-Sat-realtime/
 stream_sat_ensemble_size = 10      # ← USER-TUNABLE (use 2 for test, 10 for ops)
 
+# Max concurrent EF5 containers/processes per phase (Phase A / B / C).
+#   1  = fully sequential (safest on laptops / Docker Desktop)
+#   N  = run up to N EF5 jobs at once
+#   0 / None = auto (min(n_jobs, CPU count))
+# Override: export EF5_MAX_WORKERS=2
+ef5_max_workers = None
+
 # ── Informational only (STREAM-Sat pipeline internals — do not treat as knobs) ──
 # These are passed through to STREAM-Sat run_pipeline; values below match the
 # STREAM-Sat defaults. Prefer changing STREAM-Sat's own config if needed.
 stream_sat_window_hours = 48        # operational window (h) — STREAM-Sat controlled
+# Delete STREAM-Sat NC + GeoTIFF products older than this many hours before
+# the cycle time (keeps disk use bounded on Windows Docker / USB runs).
+stream_sat_keep_hours = 48
 stream_sat_warmup_hours = 12        # AR(1) warm-up (h) — STREAM-Sat controlled
 
 # Where STREAM-Sat GeoTIFFs (one folder per member) are written.
@@ -187,9 +212,12 @@ stream_sat_warmup_hours = 12        # AR(1) warm-up (h) — STREAM-Sat controlle
 stream_sat_precip_folder = "EF5_conf/precip/stream_sat/"
 
 # Where STREAM-Sat ensemble outputs are written.
-# Each member gets: outputs/stream_sat/ensOut1/<region>_<resolution>/
-#   e.g. outputs/stream_sat/ensOut1/guatemala_900m/
-stream_sat_output_folder = "outputs/stream_sat/"
+# Cycle-first EF5 outputs (all products):
+#   outputs/<cycle>/<region_res>/<product>/[ensOut…]/
+#   e.g. outputs/20230621.070000/guatemala_90m/stream_sat/ensOut1/
+#        outputs/20230621.070000/guatemala_90m/stormlab/ensOut1_sl2/
+# Legacy path knobs kept for back-compat; layout is driven by builders.
+stream_sat_output_folder = "outputs/"
 
 # Where STREAM-Sat ensemble states are saved per member.
 # Each member gets: EF5_conf/states/stream_sat/ensS1/<region>_<resolution>/
@@ -198,9 +226,9 @@ stream_sat_state_folder = "EF5_conf/states/stream_sat/"
 # Phase B gap-fill states / outputs (separate from STREAM-Sat).
 # Each STREAM-Sat member gets: EF5_conf/states/scampr/ensS1/<region>_<resolution>/
 scampr_state_folder = "EF5_conf/states/scampr/"
-scampr_output_folder = "outputs/scampr/"
+scampr_output_folder = "outputs/"
 hsaf_state_folder = "EF5_conf/states/hsaf/"
-hsaf_output_folder = "outputs/hsaf/"
+hsaf_output_folder = "outputs/"
 
 # STREAM-Sat GeoTIFF naming convention (EF5 forcing name pattern).
 # Files are named: streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif
@@ -218,7 +246,7 @@ stream_sat_pipeline_timeout = 7200  # 2 hours
 # Repo: tito_utils/qpf_utils/StormLab-GFS-realtime/
 # NC outputs: …/StormLab-GFS-realtime/output/<domain>/qpf_ens_<domain>_<cyc>.nc
 # GeoTIFFs:   EF5_conf/precip/stormlab/<region|domain>/ensQ1/… stormlab.YYYYMMDDHH00.tif
-# EF5 outs:   outputs/stormlab/ensOut{SS}_sl{SL}/<region>_<resolution>/
+# EF5 outs:   outputs/<cycle>/<rkey>/stormlab/ensOut{SS}_sl{SL}/
 #
 # TITO region → StormLab domain:
 #   Antigua→lesserantilles, Barbados→barbados, Guatemala→guatemala,
@@ -226,7 +254,7 @@ stream_sat_pipeline_timeout = 7200  # 2 hours
 stormlab_repo = "tito_utils/qpf_utils/StormLab-GFS-realtime"
 stormlab_nc_root = "tito_utils/qpf_utils/StormLab-GFS-realtime/output"
 stormlab_precip_folder = "EF5_conf/precip/stormlab/"
-stormlab_output_folder = "outputs/stormlab/"
+stormlab_output_folder = "outputs/"
 # StormLab defaults if CLI flags omitted (from config/<domain>.yaml):
 #   forecast.n_members = 50
 #   forecast.operational_forcing_members = 5
@@ -234,6 +262,7 @@ stormlab_output_folder = "outputs/stormlab/"
 # Pass stormlab_ensemble_size / stormlab_forcing_members to override.
 stormlab_ensemble_size = 5       # ← USER-TUNABLE (test=2, ops=10–50; default yaml=50)
 stormlab_forcing_members = 5     # GEFS forcings (default yaml=5; 1=control only for speed)
+# Note: with STREAM_SAT + STORMLAB hindcast, EF5 Phase C = stream_sat_ensemble_size × stormlab_ensemble_size jobs
 stormlab_run_pipeline = True     # False → convert existing NC only (no StormLab run)
 stormlab_source = "auto"         # auto (GEFS→GFS fallback) | gefs | gfs
 stormlab_min_age_h = 5.0         # GEFS latency gate (same as StormLab latest_cycle)
@@ -271,13 +300,34 @@ run_LR = True
 LR_timestep = "60u"
 QPF_archive_path = "EF5_conf/qpf_store/archive/"  # legacy; kept for back-compat
 
+# Deterministic IMERG path (when qpe_source=IMERG):
+#   "IMERG_ONLY"   — Phase A only (+ Phase C GFS-as-QPE if run_LR and qpf=GFS)
+#   "IMERG_SCAMPR" — ops: A + SCaMPR gap (B) + GFS-as-QPE (C); hindcast skips B
+# Never uses EF5 long-range / PRECIPFORECAST — forecast products are QPE only.
+qpe_gap_fill_mode = "IMERG_SCAMPR"
+
 # Dry-run tail (no precip): extend EF5 TIME_END by this many hours after
 # each phase window.  Missing precip → EF5 zeros.
-#   Phase A STREAM-Sat: TIME_END = ss_end + dry_run_hours; TIME_STATE = ss_end
-#   Phase B SCaMPR gap:  TIME_END = T + dry_run_hours;      TIME_STATE = T
-#   Phase C StormLab:    TIME_END = T+24h + dry_run_hours;  no TIME_STATE
+#   Phase A IMERG / STREAM-Sat: TIME_END = qpe_end + dry; TIME_STATE = qpe_end
+#   Phase B SCaMPR gap:         TIME_END = T + dry;       TIME_STATE = T
+#   Phase C GFS/StormLab QPE:   TIME_END = T+24h + dry;   no TIME_STATE
 # Set 0 to disable.
 dry_run_hours = 6
+
+# ── FIM (Flood Inundation Mapping) ─────────────────────────────────────────
+# Runs ONLY after the forecast EF5 phase (Phase C: GFS or StormLab as QPE),
+# never after IMERG/STREAM-Sat/warmup alone. 90m regions only.
+#
+# Pluvial rain total = sum of qpeaccum grids (no qpfaccum / long-range):
+#   STREAM-Sat + StormLab → SS qpeaccum + StormLab qpeaccum
+#   IMERG + GFS           → IMERG qpeaccum + (SCaMPR gap if ops) + GFS qpeaccum
+# Site YAMLs: fim_config/<Region>*.yaml  (rain_components list)
+#
+#   fim_enabled = True/False
+# Before first use: cd fim_store && unzip -o fim_store_SantaInesPetapa_v1.zarr.zip
+fim_enabled = True
+fim_config_dir = "fim_config"
+# fim_root = ""
 
 # WRF configuration (used when run_LR=True).
 # Set WRF_archive_path to the folder containing WRF netCDF files.

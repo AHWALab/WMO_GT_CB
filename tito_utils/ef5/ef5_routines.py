@@ -558,11 +558,104 @@ def write_control_file(
         rendered_lines = _apply_streamsat_control_overrides(rendered_lines, precip_loc)
     elif str(qpe_source).upper() == "STORMLAB":
         rendered_lines = _apply_stormlab_control_overrides(rendered_lines, precip_loc)
+    elif str(qpe_source).upper() == "GFS":
+        rendered_lines = _apply_gfs_qpe_control_overrides(rendered_lines, precip_loc)
+    elif str(qpe_source).upper() == "AROME":
+        rendered_lines = _apply_named_qpe_control_overrides(
+            rendered_lines, precip_loc, "AROME", timestep="60u")
+    elif str(qpe_source).upper() == "WRF":
+        rendered_lines = _apply_named_qpe_control_overrides(
+            rendered_lines, precip_loc, "WRF", timestep="60u")
 
     with open(controlFile, "w") as out_fh:
         out_fh.writelines(rendered_lines)
 
     return controlFile
+
+
+def _apply_gfs_qpe_control_overrides(lines, precip_forcing_loc):
+    """GFS as normal QPE (no long-range / PRECIPFORECAST) — same pattern as StormLab."""
+    return _apply_named_qpe_control_overrides(
+        lines, precip_forcing_loc, "GFS", timestep="60u")
+
+
+def _apply_named_qpe_control_overrides(lines, precip_forcing_loc, forcing_name, timestep="60u"):
+    """Use a named [PrecipForcing X] block as Simulation_QPE only (no LR)."""
+    tag = f"[PrecipForcing {forcing_name}]"
+    has_block = any(ln.strip() == tag for ln in lines)
+    out = []
+    i = 0
+    inserted_block = False
+    in_qpe_task = False
+    in_qpf_task = False
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped == "[Task Simulation_QPE]":
+            in_qpe_task = True
+            in_qpf_task = False
+        elif stripped == "[Task Simulation_QPF]":
+            in_qpf_task = True
+            in_qpe_task = False
+        elif stripped.startswith("[") and stripped not in (
+            "[Task Simulation_QPE]", "[Task Simulation_QPF]"
+        ):
+            in_qpe_task = False
+            in_qpf_task = False
+
+        if stripped == "[PrecipForcing IMERG]":
+            while i < len(lines):
+                block_line = lines[i]
+                block_stripped = block_line.strip()
+                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                    break
+                out.append(block_line if block_line.lstrip().startswith("#") else "#" + block_line)
+                i += 1
+            if not has_block and not inserted_block:
+                out.extend([
+                    f"{tag}\n",
+                    "TYPE=TIF\n",
+                    "UNIT=mm/h\n",
+                    "FREQ=1h\n",
+                    f"LOC={precip_forcing_loc}\n",
+                    f"NAME={forcing_name.lower()}.YYYYMMDDHH00.tif\n",
+                    "\n",
+                ])
+                inserted_block = True
+            continue
+
+        if stripped == tag:
+            out.append(line)
+            i += 1
+            while i < len(lines):
+                block_line = lines[i]
+                block_stripped = block_line.strip()
+                if block_stripped.startswith("[") and block_stripped != tag:
+                    break
+                if block_stripped.startswith("LOC="):
+                    out.append(f"LOC={precip_forcing_loc}\n")
+                else:
+                    out.append(block_line)
+                i += 1
+            inserted_block = True
+            continue
+
+        if (in_qpe_task or in_qpf_task) and stripped.startswith("PRECIP="):
+            out.append(f"PRECIP={forcing_name}\n")
+            i += 1
+            continue
+
+        if (in_qpe_task or in_qpf_task) and stripped.startswith("TIMESTEP="):
+            out.append(f"TIMESTEP={timestep}\n")
+            i += 1
+            continue
+
+        out.append(line)
+        i += 1
+
+    return out
 
 
 def _apply_stormlab_control_overrides(lines, precip_forcing_loc):
@@ -1080,10 +1173,12 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
 
     _say("    Writing control file.")
 
-    # Keep each run in a timestamped subfolder based on the orchestrator trigger time.
+    # Callers pass the final run directory (cycle-first layout):
+    #   outputs/<cycle>/<region_res>/<product>/[ensOut…]/
+    # Do not nest another timestamp under tmpOutput.
     if not output_timestamp_str:
         output_timestamp_str = currentTime.strftime("%Y%m%d.%H%M%S")
-    run_output_path = os.path.join(tmpOutput, output_timestamp_str)
+    run_output_path = os.path.normpath(tmpOutput.rstrip("/\\") or tmpOutput)
 
     controlFile = write_control_file(
         run_output_path,

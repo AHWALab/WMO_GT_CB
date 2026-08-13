@@ -196,9 +196,9 @@ def _run_single_cycle(
     systemName = config.systemName
     LR_TimeStep = config.LR_timestep
 
-    ss_out_root = getattr(config, "stream_sat_output_folder", "outputs/stream_sat/")
+    log_root = os.path.join(getattr(config, "dataPath", "outputs/") or "outputs/", "logs")
     master_log = setup_run_log(
-        ss_out_root, f"pipeline_{cycle_time.strftime('%Y%m%d_%H%M')}")
+        log_root, f"pipeline_{cycle_time.strftime('%Y%m%d_%H%M')}")
     master_log.info("TITO cycle start — %s UTC", cycle_time.strftime("%Y-%m-%d %H:%M"))
     master_log.info("Regions: %s", ", ".join(regions_to_run))
     for r in regions_to_run:
@@ -294,6 +294,39 @@ def _run_single_cycle(
         smtp_config=smtp_config,
         qpf_store_path=qpf_store_path,
     )
+
+    # STEP 8 — FIM after forecast phase only (90m sites; QPE-accum rain totals)
+    try:
+        from tito_utils.fim_utils.tito_hook import run_fim_for_cycle
+        cycle_ts = None
+        for _r, _cfg in region_configs.items():
+            cycle_ts = _cfg.get("output_timestamp_str")
+            if cycle_ts:
+                break
+        if not cycle_ts:
+            cycle_ts = cycle_time.strftime("%Y%m%d.%H%M%S")
+        # Forecast phase = Phase C (GFS/StormLab as QPE). Skip if run_LR off.
+        if LR_run:
+            console.info(
+                "[bold]STEP 8:[/] FIM after forecast (90m only, QPE accums) …")
+            run_fim_for_cycle(
+                regions_to_run=regions_to_run,
+                cycle=cycle_ts,
+                config=config,
+                master_log=master_log,
+                verbose=True,
+                forecast_ran=True,
+                region_qpe_sources=region_qpe_sources,
+                region_qpf_sources=region_qpf_requested,
+            )
+        else:
+            console.info("[bold]STEP 8:[/] FIM skipped (no forecast phase)")
+            if master_log:
+                master_log.info("FIM skipped — LR_run/forecast phase off")
+    except Exception as _fim_exc:
+        print(f"    FIM step skipped (non-fatal): {_fim_exc}")
+        if master_log:
+            master_log.error("FIM step failed: %s", _fim_exc)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,60 @@
+# STREAM-Sat × StormLab ensemble FIM (90m). After forecast Phase C only.
+# Pluvial rain = STREAM-Sat qpeaccum + StormLab qpeaccum (no qpfaccum).
+region: Guatemala_SantaInesPetapa
+required_resolution: "90m"
+
+outputs_root: outputs
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson
+store: fim_store/fim_store_SantaInesPetapa_v1.zarr
+products_root: outputs/fim/Guatemala_SantaInesPetapa
+
+member:
+  template: "stormlab/ensOut{ens}_sl{sl}/{rkey}/tmp_output_crest_stormlab"
+
+rain_components:
+  - name: stream_sat
+    template: "stream_sat/ensOut{ens}/{rkey}/tmp_output_crest_streamsat"
+    grid: qpe_accum
+    required: true
+  - name: stormlab
+    template: "stormlab/ensOut{ens}_sl{sl}/{rkey}/tmp_output_crest_stormlab"
+    grid: qpe_accum
+    required: true
+
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "stream_sat/ensOut{ens}/{rkey}/tmp_output_crest_streamsat"
+    - template: "stormlab/ensOut{ens}_sl{sl}/{rkey}/tmp_output_crest_stormlab"
+
+hazards:
+  pluvial:
+    enabled: true
+    grid: qpe_accum
+    band: [0.9, 1.2]
+    band_wide: [0.8, 1.3]
+  fluvial:
+    enabled: true
+    stat: max
+    method: standardized
+    boundary_series:
+      - "ts.cuenca_villalobos_1.crest.{cycle}.csv"
+      - "ts.cuenca_villalobos_2.crest.{cycle}.csv"
+
+thresholds_m: [0.10, 0.30, 0.50, 1.00]
+
+overbank:
+  enabled: true
+  reference_scenario: sample_0002
+
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+
+likelihood_bands:
+  very_low: [0.0, 0.2]
+  low: [0.2, 0.4]
+  medium: [0.4, 0.6]
+  high: [0.6, 1.01]

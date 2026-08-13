@@ -1,0 +1,60 @@
+# IMERG + GFS (QPE-only) — cycle-first layout, 90m, after forecast.
+region: Guatemala_SantaInesPetapa
+required_resolution: "90m"
+
+outputs_root: outputs
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson
+store: fim_store/fim_store_SantaInesPetapa_v1.zarr
+products_root: outputs/fim/Guatemala_SantaInesPetapa
+
+member:
+  template: "{cycle}/{rkey}/gfs"
+
+rain_components:
+  - name: imerg
+    template: "{cycle}/{rkey}/imerg"
+    grid: qpe_accum
+    required: true
+  - name: scampr_gap
+    template: "{cycle}/{rkey}/scampr_det"
+    grid: qpe_accum
+    required: false
+  - name: gfs_forecast
+    template: "{cycle}/{rkey}/gfs"
+    grid: qpe_accum
+    required: true
+
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "{cycle}/{rkey}/gfs"
+    - template: "{cycle}/{rkey}/imerg"
+
+hazards:
+  pluvial:
+    enabled: true
+    grid: qpe_accum
+    band: [0.9, 1.2]
+    band_wide: [0.8, 1.3]
+  fluvial:
+    enabled: true
+    stat: max
+    method: standardized
+    boundary_series:
+      - "ts.cuenca_villalobos_1.crest.{cycle}.csv"
+      - "ts.cuenca_villalobos_2.crest.{cycle}.csv"
+
+thresholds_m: [0.10, 0.30, 0.50, 1.00]
+overbank:
+  enabled: true
+  reference_scenario: sample_0002
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+likelihood_bands:
+  very_low: [0.0, 0.2]
+  low: [0.2, 0.4]
+  medium: [0.4, 0.6]
+  high: [0.6, 1.01]

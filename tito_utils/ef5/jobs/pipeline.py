@@ -20,7 +20,8 @@ from tito_utils.ef5.jobs.helpers import copy_tifs_from_shared
 from tito_utils.ef5.jobs.builders import (
     JobBatch,
     build_imerg_job,
-    build_lr_jobs,
+    build_imerg_gap_jobs,
+    build_imerg_forecast_qpe_jobs,
     build_jobs_parallel,
     build_streamsat_jobs_parallel,
     seed_gap_states_from_streamsat,
@@ -38,14 +39,47 @@ def _fmt_secs(s: float) -> str:
     return f"{h}h {m:02d}m {sec:02d}s"
 
 
-def _run_phase_jobs(label: str, jobs: list, master_log=None) -> dict:
+def _ef5_phase_workers(n_jobs: int, config=None) -> int:
+    """Cap concurrent EF5 jobs from config / env (1 = fully sequential)."""
+    n_jobs = max(1, int(n_jobs or 1))
+    raw = None
+    if config is not None:
+        raw = getattr(config, "ef5_max_workers", None)
+    if raw is None or raw == "":
+        raw = os.environ.get("EF5_MAX_WORKERS", "").strip() or None
+    if raw is None or raw == "":
+        return min(n_jobs, max(1, (os.cpu_count() or 4)))
+    try:
+        w = int(raw)
+    except (TypeError, ValueError):
+        return min(n_jobs, max(1, (os.cpu_count() or 4)))
+    if w <= 0:
+        return min(n_jobs, max(1, (os.cpu_count() or 4)))
+    return max(1, min(n_jobs, w))
+
+
+def _run_phase_jobs(label: str, jobs: list, master_log=None, config=None) -> dict:
     """Run a job list; return wall-clock + per-job timings."""
     if not jobs:
         return {"phase": label, "n": 0, "wall_s": 0.0, "jobs": []}
     t0 = time.time()
+    workers = _ef5_phase_workers(len(jobs), config)
+    if workers == 1 and len(jobs) > 1:
+        msg = f"    {label}: EF5 sequential (ef5_max_workers=1, {len(jobs)} jobs)"
+        print(msg)
+        if master_log:
+            master_log.info(msg)
+    elif workers < len(jobs):
+        msg = (
+            f"    {label}: EF5 concurrency capped at {workers} "
+            f"(ef5_max_workers; {len(jobs)} jobs)"
+        )
+        print(msg)
+        if master_log:
+            master_log.info(msg)
     per = run_ef5_simulations_parallel(
         jobs,
-        max_workers=min(len(jobs), max(1, (os.cpu_count() or 4))),
+        max_workers=workers,
     ) or []
     wall = time.time() - t0
     sum_job = sum(float(t.get("seconds", 0) or 0) for t in per)
@@ -106,7 +140,7 @@ def _ensure_region_dirs(
         mkdir_p(cfg["region_data_path"])
         mkdir_p(cfg["region_qpf_store"])
         print(f"    {region}: states={cfg['region_states_path']} "
-              f"({'STREAM_SAT=per-member' if is_streamsat else 'IMERG/default'}), "
+              f"({'STREAM_SAT=per-member' if is_streamsat else 'IMERG path'}), "
               f"data={cfg['region_data_path']}")
 
 
@@ -265,7 +299,9 @@ def run_ef5_job_pipeline(
                         f"    EF5 Phase A: STREAM-Sat "
                         f"({len(batch.streamsat_jobs)} runs) …")
                 phase_timings.append(
-                    _run_phase_jobs("SS-A STREAM-Sat", batch.streamsat_jobs, master_log)
+                    _run_phase_jobs(
+                        "SS-A STREAM-Sat", batch.streamsat_jobs, master_log, config
+                    )
                 )
                 user_print("    STREAM-Sat EF5 complete — states saved")
 
@@ -297,7 +333,9 @@ def run_ef5_job_pipeline(
                         f"    EF5 Phase B: gap-fill "
                         f"({len(batch.streamsat_gap_jobs)} runs) …")
                 phase_timings.append(
-                    _run_phase_jobs("SS-B gap-fill", batch.streamsat_gap_jobs, master_log)
+                    _run_phase_jobs(
+                        "SS-B gap-fill", batch.streamsat_gap_jobs, master_log, config
+                    )
                 )
                 user_print("    Gap-fill EF5 complete — states saved at cycle time")
 
@@ -323,7 +361,12 @@ def run_ef5_job_pipeline(
                         f"    EF5 Phase C: StormLab forecast "
                         f"({len(batch.streamsat_lr_jobs)} runs) …")
                 phase_timings.append(
-                    _run_phase_jobs("SS-C StormLab QPE[Forecast]", batch.streamsat_lr_jobs, master_log)
+                    _run_phase_jobs(
+                        "SS-C StormLab QPE[Forecast]",
+                        batch.streamsat_lr_jobs,
+                        master_log,
+                        config,
+                    )
                 )
                 user_print("    StormLab EF5 complete")
 
@@ -342,41 +385,72 @@ def run_ef5_job_pipeline(
             if region_qpe_sources.get(r, "").upper() != "STREAM_SAT"
         ]
 
-        if qpe_gap_fill_mode == "IMERG_SCAMPR":
-            print("***_________Phase 2a: IMERG EF5 control files_________***")
+        # ── Deterministic IMERG path (QPE only — never long-range / PRECIPFORECAST)
+        #   A) IMERG QPE + dry → states/imerg/<rkey>/
+        #   B) ops + IMERG_SCAMPR: SCaMPR gap QPE + dry → states/scampr_det/<rkey>/
+        #   C) GFS/AROME/WRF as QPE + dry (no state save) from A or B states
+        # Same pattern as STREAM-Sat → (gap) → StormLab-as-QPE.
+        if non_ss:
+            print("***_________Phase A: IMERG QPE (+ dry)_________***")
             build_jobs_parallel(build_imerg_job, non_ss, **build_kwargs)
 
             if batch.imerg_jobs:
-                print("***_________Running IMERG EF5 simulations_________***")
+                print("***_________Running IMERG EF5 (QPE)_________***")
                 run_ef5_simulations_parallel(
-                    batch.imerg_jobs, max_workers=len(batch.imerg_jobs))
-                print("    IMERG EF5 runs complete — states saved at T−4h")
+                    batch.imerg_jobs,
+                    max_workers=_ef5_phase_workers(len(batch.imerg_jobs), config),
+                )
+                if hindcast_mode:
+                    print("    IMERG complete — states @ T under states/imerg/")
+                else:
+                    print("    IMERG complete — states @ T−4h under states/imerg/")
             else:
                 print("    No IMERG EF5 jobs prepared.")
 
-            if lr_run:
-                print("***_________Phase 2b: LR EF5 control files_________***")
-                build_jobs_parallel(build_lr_jobs, non_ss, **build_kwargs)
-                if batch.lr_jobs:
-                    print("***_________Running LR EF5 simulations_________***")
+            do_gap = (
+                (not hindcast_mode)
+                and qpe_gap_fill_mode == "IMERG_SCAMPR"
+                and lr_run
+            )
+            if do_gap:
+                print("***_________Phase B: SCaMPR gap QPE (+ dry)_________***")
+                # Reuse lr_jobs list for gap then clear into sequential phases
+                n_before = len(batch.lr_jobs)
+                build_jobs_parallel(build_imerg_gap_jobs, non_ss, **build_kwargs)
+                gap_jobs = batch.lr_jobs[n_before:]
+                if gap_jobs:
+                    print("***_________Running SCaMPR gap EF5 (QPE)_________***")
                     run_ef5_simulations_parallel(
-                        batch.lr_jobs, max_workers=len(batch.lr_jobs))
+                        gap_jobs,
+                        max_workers=_ef5_phase_workers(len(gap_jobs), config),
+                    )
+                    print("    Gap complete — states @ T under states/scampr_det/")
                 else:
-                    print("    No LR EF5 jobs prepared.")
+                    print("    No SCaMPR gap jobs prepared.")
+
+            if lr_run:
+                print(
+                    "***_________Phase C: forecast as QPE "
+                    "(GFS/AROME/WRF, no long-range)_________***"
+                )
+                n_before = len(batch.lr_jobs)
+                build_jobs_parallel(
+                    build_imerg_forecast_qpe_jobs,
+                    non_ss,
+                    load_from_gap=do_gap,
+                    **build_kwargs,
+                )
+                fc_jobs = batch.lr_jobs[n_before:]
+                if fc_jobs:
+                    print("***_________Running forecast EF5 (QPE)_________***")
+                    run_ef5_simulations_parallel(
+                        fc_jobs,
+                        max_workers=_ef5_phase_workers(len(fc_jobs), config),
+                    )
+                else:
+                    print("    No forecast QPE jobs prepared.")
 
             if batch.imerg_jobs or batch.lr_jobs:
-                newline(2)
-                print("******** EF5 Outputs are ready!!! ********")
-            elif not (batch.streamsat_jobs or batch.streamsat_lr_jobs):
-                print("No EF5 jobs were prepared.")
-
-        else:
-            print("***_________Preparing EF5 control files_________***")
-            build_jobs_parallel(build_imerg_job, non_ss, **build_kwargs)
-            if batch.imerg_jobs:
-                print("***_________Running EF5 simulations_________***")
-                run_ef5_simulations_parallel(
-                    batch.imerg_jobs, max_workers=len(batch.imerg_jobs))
                 newline(2)
                 print("******** EF5 Outputs are ready!!! ********")
             elif not (batch.streamsat_jobs or batch.streamsat_lr_jobs):

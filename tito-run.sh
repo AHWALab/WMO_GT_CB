@@ -21,6 +21,8 @@
 #
 # ── Hindcast ────────────────────────────────────────────────────────────────
 #   ./tito-run.sh hindcast "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
+#   Training offline (no downloads — uses offline_precips/ or staged EF5_conf precip):
+#   ./tito-run.sh hindcast "2023-06-21 07:00" "2023-06-21 08:00" --regions Guatemala --offline
 #
 # ── Windows ─────────────────────────────────────────────────────────────────
 #   Prefer pure CMD (no PowerShell / execution-policy issues):
@@ -55,6 +57,13 @@ case "$UNAME_S" in
     MINGW*|MSYS*|CYGWIN*) HOST_OS=windows ;;
     *)        HOST_OS=other ;;
 esac
+
+# macOS: Gatekeeper quarantine on USB/download copies → "./script: Permission denied"
+# USB/FAT/zip often strips +x — restore launchers when the FS allows it.
+if [[ "$HOST_OS" == "macos" ]]; then
+    xattr -dr com.apple.quarantine "$SCRIPT_DIR" 2>/dev/null || true
+fi
+chmod +x "$SCRIPT_DIR/tito-run.sh" "$SCRIPT_DIR/load-docker-images.sh" 2>/dev/null || true
 
 # Host path Docker Desktop can bind-mount (critical on Windows Git Bash)
 host_project_path() {
@@ -109,21 +118,28 @@ load_one_archive() {
     local label="$2"
     echo "    Loading $label from:"
     echo "      $archive"
-    # Modern Docker accepts .tar.gz directly
+    if [[ ! -r "$archive" ]]; then
+        echo "ERROR: cannot read archive (Permission denied or missing): $archive" >&2
+        echo "  On macOS: copy off the USB to a local folder, or: xattr -dr com.apple.quarantine ." >&2
+        return 1
+    fi
+    # Prefer gunzip|docker load — more reliable on Docker Desktop (macOS) than load -i .gz
     if [[ "$archive" == *.tar.gz ]] || [[ "$archive" == *.tgz ]]; then
+        if command -v gunzip >/dev/null 2>&1; then
+            if gunzip -c "$archive" | docker load; then
+                return 0
+            fi
+        fi
+        if command -v gzip >/dev/null 2>&1; then
+            if gzip -dc "$archive" | docker load; then
+                return 0
+            fi
+        fi
+        # Last resort: Docker may accept .tar.gz directly
         if docker load -i "$archive"; then
             return 0
         fi
-        # Fallback: stream through gunzip / gzip -dc
-        if command -v gunzip >/dev/null 2>&1; then
-            gunzip -c "$archive" | docker load
-            return $?
-        fi
-        if command -v gzip >/dev/null 2>&1; then
-            gzip -dc "$archive" | docker load
-            return $?
-        fi
-        echo "ERROR: cannot decompress $archive (need docker load -i support or gunzip)" >&2
+        echo "ERROR: failed to load $archive" >&2
         return 1
     fi
     docker load -i "$archive"
@@ -138,9 +154,18 @@ ensure_docker_images() {
     if ! command -v docker >/dev/null 2>&1; then
         return 0
     fi
-    if ! docker info >/dev/null 2>&1; then
-        echo "ERROR: Docker is installed but the daemon is not running." >&2
-        echo "  Start Docker Desktop (Mac/Windows) or: sudo systemctl start docker (Linux)" >&2
+    local _dinfo
+    if ! _dinfo="$(docker info 2>&1)"; then
+        if echo "$_dinfo" | grep -qiE 'permission denied|connect:|Cannot connect|Is the docker daemon'; then
+            echo "ERROR: cannot talk to Docker daemon." >&2
+            echo "  macOS/Windows: start Docker Desktop and wait until it is Running." >&2
+            echo "  Linux: sudo systemctl start docker  (or add user to docker group)" >&2
+            echo "  Detail: $_dinfo" >&2
+        else
+            echo "ERROR: Docker is installed but the daemon is not running." >&2
+            echo "  Start Docker Desktop (Mac/Windows) or: sudo systemctl start docker (Linux)" >&2
+            echo "  Detail: $_dinfo" >&2
+        fi
         exit 1
     fi
 
@@ -230,7 +255,7 @@ detect_runtime() {
 
 # EF5_conf holds basic/parameters/pet/templates/states/precip/precipEF5/qpf_store
 DATA_MOUNTS=(
-    EF5_conf outputs
+    EF5_conf outputs fim_config fim_store offline_precips offline
 )
 
 # ── Docker ─────────────────────────────────────────────────────────────────
@@ -274,11 +299,19 @@ run_docker() {
         -e EF5_RUNTIME=docker
         -e "EF5_IMAGE=$EF5_DOCKER_IMAGE"
         -e "TITO_HOST_PROJECT=$HOST_PROJECT"
+        -e TITO_FIM_ROOT=/app
         -e PYTHONUNBUFFERED=1
         -e TZ=Etc/UTC
         -e STORMLAB_USE_TITO_ENV=1
         --rm
     )
+    # Forward offline training mode into the container
+    if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
+        args+=(-e TITO_OFFLINE=1)
+        args+=(-e "TITO_OFFLINE_PRECIP=${TITO_OFFLINE_PRECIP:-/app/offline_precips}")
+        # /app for `import offline`; /app/offline so sitecustomize.py auto-loads
+        args+=(-e "PYTHONPATH=/app:/app/offline${PYTHONPATH:+:$PYTHONPATH}")
+    fi
 
     # --network host is reliable only on native Linux.
     # Docker Desktop (Mac/Windows) uses a VM; default bridge still has outbound net.
@@ -328,16 +361,28 @@ run_apptainer() {
         --bind "$SCRIPT_DIR/hindcast_manager.py:/app/hindcast_manager.py:ro"
         --bind "$SCRIPT_DIR/tito_utils:/app/tito_utils"
         --bind "$SCRIPT_DIR/EF5:/app/EF5:ro"
+        --bind "$SCRIPT_DIR/docker-entrypoint.sh:/app/docker-entrypoint.sh:ro"
     )
+
+    # --cleanenv drops host env; pass offline flags explicitly when requested
+    local env_csv="EF5_RUNTIME=local,EF5_LOCAL_BIN=/app/EF5/bin/ef5,TITO_FIM_ROOT=/app,PYTHONUNBUFFERED=1,TZ=Etc/UTC,STORMLAB_USE_TITO_ENV=1"
+    local offline=0
+    if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
+        offline=1
+        env_csv+=",TITO_OFFLINE=1,TITO_OFFLINE_PRECIP=/app/offline_precips,TITO_OFFLINE_CONFIG=Caribbean_Comoros_config,PYTHONPATH=/app:/app/offline"
+    fi
 
     echo "==== TITO launcher ===="
     echo "  Runtime : $cmd"
     echo "  Project : $SCRIPT_DIR"
     echo "  SIF     : $TITO_SIF"
     echo "  EF5     : $EF5_LOCAL_BIN (in-process, no nested Apptainer)"
+    if [[ "$offline" == "1" ]]; then
+        echo "  Offline : YES (no precip downloads)"
+    fi
 
     exec "$cmd" run --cleanenv \
-        --env "EF5_RUNTIME=local,EF5_LOCAL_BIN=/app/EF5/bin/ef5,PYTHONUNBUFFERED=1,TZ=Etc/UTC,STORMLAB_USE_TITO_ENV=1" \
+        --env "$env_csv" \
         "${binds[@]}" \
         --pwd /app \
         "$TITO_SIF" "$@"

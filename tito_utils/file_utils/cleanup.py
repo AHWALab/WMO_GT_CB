@@ -27,6 +27,98 @@ def _to_naive_utc(dt):
     return to_naive_utc(dt)
 
 
+def _streamsat_nc_datetime(filename: str):
+    """STREAMSat_<domain>_YYYYMMDDTHHMM_EnsN.nc → datetime."""
+    m = re.search(r"_(\d{8})T(\d{4})_", filename)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M")
+    except ValueError:
+        return None
+
+
+def _streamsat_tif_datetime(filename: str):
+    """streamsat.qpe.YYYYMMDDHHMM.mmhInst.tif → datetime."""
+    m = re.search(r"\.qpe\.(\d{12})\.", filename)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1), "%Y%m%d%H%M")
+    except ValueError:
+        return None
+
+
+def cleanup_streamsat_outputs(
+    current_datetime,
+    nc_output_dirs=None,
+    tif_root=None,
+    keep_hours: float = 48.0,
+) -> dict:
+    """
+    Remove STREAM-Sat product files older than *keep_hours* before *current_datetime*.
+
+    Targets:
+      - Ensemble netCDF: STREAMSat_<domain>_YYYYMMDDTHHMM_EnsN.nc
+      - Converted GeoTIFFs under tif_root/ensP*/streamsat.qpe.*.tif
+
+    Returns counts: {"nc_removed": N, "tif_removed": M}.
+    """
+    current = _to_naive_utc(current_datetime)
+    cutoff = current - timedelta(hours=float(keep_hours))
+    nc_removed = 0
+    tif_removed = 0
+
+    for nc_dir in nc_output_dirs or []:
+        if not nc_dir or not os.path.isdir(nc_dir):
+            continue
+        try:
+            for fname in os.listdir(nc_dir):
+                if not fname.endswith(".nc") or not fname.startswith("STREAMSat_"):
+                    continue
+                fdt = _streamsat_nc_datetime(fname)
+                if fdt is None or fdt >= cutoff:
+                    continue
+                fpath = os.path.join(nc_dir, fname)
+                try:
+                    os.remove(fpath)
+                    nc_removed += 1
+                except OSError as e:
+                    print(f"    Warning: could not delete STREAM-Sat NC {fpath}: {e}")
+        except OSError as e:
+            print(f"    Warning: STREAM-Sat NC cleanup {nc_dir}: {e}")
+
+    if tif_root and os.path.isdir(tif_root):
+        pattern = os.path.join(tif_root, "ensP*", "*.tif")
+        for fpath in glob.glob(pattern):
+            fname = os.path.basename(fpath)
+            fdt = _streamsat_tif_datetime(fname)
+            if fdt is None:
+                # also try geotiff metadata
+                try:
+                    fdt = get_geotiff_datetime(fpath)
+                except Exception:
+                    fdt = None
+            if fdt is None:
+                continue
+            fdt = _to_naive_utc(fdt)
+            if fdt >= cutoff:
+                continue
+            try:
+                os.remove(fpath)
+                tif_removed += 1
+            except OSError as e:
+                print(f"    Warning: could not delete STREAM-Sat TIF {fpath}: {e}")
+
+    if nc_removed or tif_removed:
+        print(
+            f"    STREAM-Sat cleanup: removed {nc_removed} NC + {tif_removed} TIF "
+            f"older than {cutoff.strftime('%Y-%m-%d %H:%M')} UTC "
+            f"(keep {keep_hours:g}h before cycle)"
+        )
+    return {"nc_removed": nc_removed, "tif_removed": tif_removed}
+
+
 def cleanup_staged_precip_folders(staging_folders):
     """Remove staged .tif files from EF5 precip folders.
 

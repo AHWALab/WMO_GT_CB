@@ -1,0 +1,59 @@
+# Event 2: 2023-06-23 hindcast. Layout differs from the July test run:
+# no scampr branch; stream_sat covers warm-up AND the gap (to T+6h),
+# stormlab carries the 30 h forecast rain as PRECIP.
+# Magnitude therefore = stormlab accumulation alone (avoids double counting
+# the 10:00-16:00 overlap and the 40 h of warm-up rain inside streamsat).
+# qpe_streamsat is reported for context with scale 0 and required false.
+region: Guatemala_SantaInesPetapa
+
+outputs_root: ef5_outputs2/outputs
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: aoc_santa_ines_5km_epsg4326.geojson
+store: fim_store_SantaInesPetapa_v1.zarr
+products_root: fim_out_event2
+
+member:
+  template: "stormlab/ensOut{ens}_sl{sl}/guatemala/tmp_output_crest_stormlab"
+
+components:
+  - name: rain_stormlab
+    template: "stormlab/ensOut{ens}_sl{sl}/guatemala/tmp_output_crest_stormlab"
+    grid: qpe_accum
+  - name: qpe_streamsat
+    template: "stream_sat/ensOut{ens}/guatemala/tmp_output_crest_streamsat"
+    grid: qpe_accum
+    scale: 0.0          # context only: reported, not added to the total
+    required: false
+  - name: qpe_scampr
+    template: "scampr/ensOut{ens}/guatemala/tmp_output_crest_gap_scampr"
+    grid: qpe_accum
+    required: false      # absent in this event; counts as 0 when present later
+
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "stream_sat/ensOut{ens}/guatemala/tmp_output_crest_streamsat"
+    - template: "stormlab/ensOut{ens}_sl{sl}/guatemala/tmp_output_crest_stormlab"
+    - template: "guatemala/tmp_output_crest_warmup"
+
+files:
+  uq: "maxunitq.{cycle}.tif"
+  qpe_accum: "qpeaccum.{cycle}.tif"
+  qpf_accum: "qpfaccum.{cycle}.tif"
+
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+
+matching:
+  band: [0.9, 1.2]
+  band_wide: [0.8, 1.3]
+
+probability:
+  depth_threshold_m: 0.30
+  bands:
+    very_low: [0.0, 0.2]
+    low: [0.2, 0.4]
+    medium: [0.4, 0.6]
+    high: [0.6, 1.01]

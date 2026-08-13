@@ -115,7 +115,14 @@ def run_warmup_if_needed(
             warmup_streamsat.add(region)
             states_path_for_region = os.path.join(statesPath, rkey, "")
         else:
-            states_path_for_region = os.path.join(statesPath, rkey, "")
+            # Deterministic IMERG path stores states under states/imerg/<rkey>/
+            if qpe == "IMERG":
+                states_path_for_region = os.path.join(
+                    getattr(config, "imerg_state_folder", "EF5_conf/states/imerg/"),
+                    rkey, "",
+                )
+            else:
+                states_path_for_region = os.path.join(statesPath, rkey, "")
             found, st = find_available_states(
                 states_path_for_region, modelStates, cycle_time,
                 cycle_time - STATE_LOOKBACK,
@@ -268,10 +275,14 @@ def run_warmup_if_needed(
          wsrc, wfolder) in warmup_regions_final:
 
         mkdir_p(spath)
-        warmup_tmp = os.path.join(rdata, "tmp_output_crest_warmup")
+        # outputs/<cycle>/<rkey>/warmup/
+        warmup_tmp = os.path.join(
+            getattr(config, "dataPath", "outputs/") or "outputs/",
+            output_ts, rkey, "warmup")
         warmup_staging = os.path.join(precipEF5Folder, rkey, "warmup")
         mkdir_p(warmup_tmp)
         mkdir_p(warmup_staging)
+        mkdir_p(rdata)
 
         tmpl = resolve_control_template(
             templatePath,
@@ -351,7 +362,19 @@ def run_warmup_if_needed(
         return
 
     print(f"\n***_________Running {len(warmup_jobs)} warmup EF5 job(s)_________***")
-    run_ef5_simulations_parallel(warmup_jobs)
+    _w = getattr(config, "ef5_max_workers", None)
+    try:
+        _mw = int(_w) if _w not in (None, "") else None
+    except (TypeError, ValueError):
+        _mw = None
+    if _mw is not None and _mw <= 0:
+        _mw = None
+    run_ef5_simulations_parallel(
+        warmup_jobs,
+        max_workers=_mw if _mw is not None else min(
+            len(warmup_jobs), max(1, (os.cpu_count() or 4)),
+        ),
+    )
     print("    Warmup EF5 runs complete — states saved.")
 
     # ═══════════════════════════════════════════════════════════════════

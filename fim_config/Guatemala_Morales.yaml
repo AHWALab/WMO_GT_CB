@@ -1,0 +1,74 @@
+# FIM site: Guatemala, Morales (Rio Motagua). PREPARED, NOT ACTIVE YET.
+# ------------------------------------------------------------------------------
+# STATUS August 2026: the RainyDay rain scenarios for Morales exist and their
+# storm totals are already tabulated (fim_store/magnitudes_Morales_real.csv,
+# 200 scenarios), but the flood map library (MaximumDepth GeoTIFF per scenario
+# from the hydraulic model) has not been delivered yet. Without it the scenario
+# store cannot be built, so this site is switched off:
+enabled: false
+#
+# TO ACTIVATE THIS SITE once the flood map library arrives:
+#   1. build the store:    python fim_dev/build_store_guatemala.py
+#      (point FIM_LIB_DIR at the Morales MaximumDepth tifs,
+#       FIM_STORE_OUT at fim_store/fim_store_Morales_v1.zarr)
+#   2. attach the real magnitudes from fim_store/magnitudes_Morales_real.csv
+#      and the fluvial boundary discharges, using
+#      fim_dev/attach_real_magnitudes_santaines.py as the template
+#   3. create the area of concern polygon (library extent plus buffer):
+#      fim_config/aoc/Guatemala_Morales_aoc.geojson (EPSG 4326)
+#   4. make sure the Guatemala basin list writes the boundary gauge series
+#      named below (outputts=true)
+#   5. pick the overbank reference scenario (the near zero inflow scenario of
+#      the Morales library; sample_0002 below is a placeholder to revisit)
+#   6. delete the "enabled: false" line above
+#   7. zip the store and commit it: fim_store/fim_store_Morales_v1.zarr.zip
+region: Guatemala_Morales
+
+outputs_root: outputs/Guatemala
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: fim_config/aoc/Guatemala_Morales_aoc.geojson    # to create, step 3
+store: fim_store/fim_store_Morales_v1.zarr                   # to build, step 1
+products_root: outputs/Guatemala/fim_Morales
+
+member:
+  template: "tmp_output_crest_scampr_{qpf}"
+
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "tmp_output_crest_scampr_{qpf}"
+    - template: "tmp_output_crest_imerg"
+
+# Morales is also a pluvial plus fluvial site. The fluvial boundary points are
+# the Motagua gauges upstream of the Morales reach.
+hazards:
+  pluvial:
+    enabled: true
+    grid: qpe_accum
+    band: [0.9, 1.2]
+    band_wide: [0.8, 1.3]
+  fluvial:
+    enabled: true
+    stat: max
+    method: standardized
+    boundary_series:
+      - "ts.cuenca_motagua_1.crest.{cycle}.csv"
+      - "ts.cuenca_motagua_2.crest.{cycle}.csv"
+
+# USER INPUT: depth thresholds in meters.
+thresholds_m: [0.10, 0.30, 0.50, 1.00]
+
+overbank:
+  enabled: true
+  reference_scenario: sample_0002    # revisit for the Morales library, step 5
+
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+
+likelihood_bands:
+  very_low: [0.0, 0.2]
+  low: [0.2, 0.4]
+  medium: [0.4, 0.6]
+  high: [0.6, 1.01]

@@ -22,13 +22,14 @@ from __future__ import annotations
 import glob
 import os
 import re
+import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from tito_utils.file_utils.cleanup import cleanup_precip
+from tito_utils.file_utils.cleanup import cleanup_precip, cleanup_streamsat_outputs
 from tito_utils.file_utils.file_handling import mkdir_p, newline
 from tito_utils.ef5.ef5_routines import find_available_states
 from tito_utils.qpe_utils import (
@@ -95,14 +96,18 @@ def _resolve_imerg_download_window(
     model_states: List[str],
     cold_start_warmup: timedelta,
     cold_start_post_warmup: timedelta,
+    *,
+    hindcast: bool = False,
 ) -> Tuple[datetime, datetime]:
     """Return (dl_start, effective_start) for IMERG download.
 
-    Checks states up to 7 days back from T−4h.  Includes a 30-min buffer
-    before the effective start so that ``_imerg_files_present`` in
-    ``prepare_ef5`` always finds a complete set of files.
+    Checks states in *states_path* (must be the same folder EF5 will load,
+    e.g. ``EF5_conf/states/imerg/<region_res>/``).
+
+    Hindcast: search from cycle time T (no 4h latency).
+    Operational: search from T−4h (IMERG Early).
     """
-    target = cycle_time - timedelta(hours=4)        # T−4h
+    target = cycle_time if hindcast else (cycle_time - timedelta(hours=4))
     fail_time = target - timedelta(days=7)
 
     found, state_time = find_available_states(
@@ -113,15 +118,39 @@ def _resolve_imerg_download_window(
         dl_start = state_time - timedelta(minutes=30)   # 30-min buffer
         effective = state_time
         print(f"    {region}: states at {state_time.strftime('%Y%m%d_%H%M')} → "
-              f"IMERG from {dl_start.strftime('%Y%m%d_%H%M')}")
+              f"IMERG from {dl_start.strftime('%Y%m%d_%H%M')} "
+              f"(path={states_path})")
     else:
         warm_end = target - cold_start_post_warmup
         dl_start = warm_end - cold_start_warmup - timedelta(minutes=30)
         effective = dl_start + timedelta(minutes=30)
-        print(f"    {region}: no states → cold-start IMERG from "
+        print(f"    {region}: no states in {states_path} → cold-start IMERG from "
               f"{dl_start.strftime('%Y%m%d_%H%M')}")
 
     return dl_start, effective
+
+
+def _seed_imerg_from_warmup(imerg_folder: str, warmup_folder: str,
+                            dl_start: datetime, imerg_end: datetime) -> int:
+    """Copy existing warmup IMERG TIFs into the cycle shared folder. Returns count."""
+    if not warmup_folder or not os.path.isdir(warmup_folder):
+        return 0
+    n = 0
+    t = dl_start
+    delta = timedelta(minutes=30)
+    while t <= imerg_end:
+        name = f"imerg.qpe.{t.strftime('%Y%m%d%H%M')}.30minAccum.tif"
+        src = os.path.join(warmup_folder, name)
+        dst = os.path.join(imerg_folder, name)
+        if os.path.isfile(src) and os.path.getsize(src) > 0:
+            if not (os.path.isfile(dst) and os.path.getsize(dst) > 0):
+                try:
+                    shutil.copy2(src, dst)
+                    n += 1
+                except OSError:
+                    pass
+        t += delta
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -325,9 +354,10 @@ def prepare_all_precip(
         except Exception as exc:
             print(f"    Warning: IMERG cleanup [{ck}]: {exc}")
 
-        # Determine the earliest download start across all regions using IMERG.
-        # Use the first region's state check; all IMERG regions share the same
-        # global bbox so the download is identical.
+        # State path MUST match EF5 Phase A (states/imerg/<region_res>/).
+        # Looking under states/<region_res>/ only causes a short cold-start
+        # download while EF5 still warm-starts from older imerg/ states →
+        # mass "Missing precip" zeros.
         ref_region = imerg_regions[0]
         from tito_utils.ef5.jobs.helpers import (
             region_path_key,
@@ -338,26 +368,52 @@ def prepare_all_precip(
             getattr(config, "model_resolution", "90m"),
             getattr(config, "region_resolution_map", {}),
         )
-        ref_states_path = os.path.join(
-            states_root, region_path_key(ref_region, _res))
+        _rkey = region_path_key(ref_region, _res)
+        imerg_state_root = getattr(
+            config, "imerg_state_folder", "EF5_conf/states/imerg/")
+        ref_states_path = os.path.join(imerg_state_root, _rkey)
+
         dl_start, eff_start = _resolve_imerg_download_window(
             ref_region, ct, ref_states_path, model_states,
             cold_warmup, cold_post,
+            hindcast=hindcast,
         )
 
-        imerg_end = ct - timedelta(hours=4)
+        # Hindcast: full archive IMERG through cycle time T (no 4h latency).
+        # Operational: IMERG Early ends at T−4h.
+        if hindcast:
+            imerg_end = ct
+        else:
+            imerg_end = ct - timedelta(hours=4)
 
-        # Check what we already have
+        # Prefer files already downloaded for warmup (same product, long archive).
+        warmup_folder = os.path.join(
+            precip_root, "_warmup", "_shared_imerg")
+        n_seed = _seed_imerg_from_warmup(
+            imerg_folder, warmup_folder, dl_start, imerg_end)
+        if n_seed:
+            print(f"    IMERG [{ck}]: seeded {n_seed} file(s) from warmup cache")
+
+        # Check what we already have (after seed)
         existing = sorted(glob.glob(os.path.join(
             imerg_folder, "imerg.qpe.*.30minAccum.tif")))
         if existing:
+            # Need coverage from dl_start through imerg_end — not only "latest"
+            earliest = datetime.strptime(
+                os.path.basename(existing[0])[10:22], "%Y%m%d%H%M")
             latest_dt = datetime.strptime(
                 os.path.basename(existing[-1])[10:22], "%Y%m%d%H%M")
-            if latest_dt >= imerg_end - timedelta(minutes=30):
-                print(f"    IMERG [{ck}] up to date — skip download")
-            else:
-                dl_start = max(dl_start, latest_dt + timedelta(minutes=30))
-                _do_imerg_download(imerg_folder, dl_start, imerg_end, ck, config)
+            need_start = dl_start
+            if earliest <= dl_start + timedelta(minutes=30) and latest_dt >= imerg_end - timedelta(minutes=30):
+                # Spot-check: if first/last OK, still fill holes via get_gpm (skip exists)
+                print(
+                    f"    IMERG [{ck}]: have {len(existing)} file(s) "
+                    f"{earliest.strftime('%Y%m%d_%H%M')}→"
+                    f"{latest_dt.strftime('%Y%m%d_%H%M')}; "
+                    f"fill any gaps {need_start.strftime('%Y%m%d_%H%M')}→"
+                    f"{imerg_end.strftime('%Y%m%d_%H%M')}"
+                )
+            _do_imerg_download(imerg_folder, need_start, imerg_end, ck, config)
         else:
             _do_imerg_download(imerg_folder, dl_start, imerg_end, ck, config)
 
@@ -444,6 +500,27 @@ def prepare_all_precip(
             if master_log:
                 master_log.info("STREAM-Sat [%s] start — regions: %s end=%s",
                                 domain, domains_regions, ss_end_dt)
+
+            # Drop NC/TIF products older than cycle−keep_hours (default 48h)
+            try:
+                keep_h = float(getattr(config, "stream_sat_keep_hours", 48))
+                ct_ss = region_cycle_times.get(representative)
+                # NC live under STREAM-Sat-realtime/extension/realtime/output/<domain>/
+                ss_pkg = os.path.join(
+                    tito_root, "tito_utils", "qpe_utils",
+                    "STREAM-Sat-realtime", "extension", "realtime", "output",
+                    domain,
+                )
+                # Also clean any leftover scratch dirs' parent output
+                nc_dirs = [ss_pkg]
+                cleanup_streamsat_outputs(
+                    ct_ss or datetime.utcnow(),
+                    nc_output_dirs=nc_dirs,
+                    tif_root=domain_tif_root,
+                    keep_hours=keep_h,
+                )
+            except Exception as _ss_clean_exc:
+                print(f"    Warning: STREAM-Sat cleanup: {_ss_clean_exc}")
 
             try:
                 info = run_and_convert_streamsat(

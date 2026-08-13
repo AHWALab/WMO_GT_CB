@@ -1,0 +1,61 @@
+# TEMPLATE: pluvial only FIM site (most countries other than Guatemala).
+# ------------------------------------------------------------------------------
+# Copy this file to fim_config/<Region>_<SiteName>.yaml where <Region> is the
+# exact region name from Caribbean_Comoros_config.py regions_to_run (for
+# example Haiti_PortAuPrince.yaml) and fill the paths marked TODO. The
+# orchestrator picks it up automatically on the next cycle.
+#
+# The ONLY difference from a Guatemala style site is the hazards block below:
+# fluvial is disabled, so the site produces pluvial products alone (folder
+# pluvial/ plus pluvial_overbank/) and no combined product. Everything else,
+# thresholds included, works identically.
+#
+# A site needs three inputs before it can run (README_FIM.md, Manual steps):
+# the scenario store, the real storm magnitudes attached to it, and the area
+# of concern polygon.
+region: CountryX_SiteName          # TODO
+
+outputs_root: outputs/CountryX     # TODO: outputs/<Region>
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: fim_config/aoc/CountryX_SiteName_aoc.geojson   # TODO
+store: fim_store/fim_store_CountryX_SiteName_v1.zarr        # TODO
+products_root: outputs/CountryX/fim_SiteName                # TODO
+
+member:
+  template: "tmp_output_crest_scampr_{qpf}"
+
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "tmp_output_crest_scampr_{qpf}"
+    - template: "tmp_output_crest_imerg"
+
+# Pluvial only: fluvial stays disabled. Delete nothing; if the site later
+# gets a discharge indexed library, flip fluvial to enabled: true and add
+# the boundary_series list (see Guatemala_SantaInesPetapa.yaml).
+hazards:
+  pluvial:
+    enabled: true
+    grid: qpe_accum
+    band: [0.9, 1.2]
+    band_wide: [0.8, 1.3]
+  fluvial:
+    enabled: false
+
+# USER INPUT: depth thresholds in meters, any number of values.
+thresholds_m: [0.10, 0.30, 0.50, 1.00]
+
+overbank:
+  enabled: true
+  reference_scenario: sample_0002   # TODO: the near zero rain scenario of the library
+
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+
+likelihood_bands:
+  very_low: [0.0, 0.2]
+  low: [0.2, 0.4]
+  medium: [0.4, 0.6]
+  high: [0.6, 1.01]

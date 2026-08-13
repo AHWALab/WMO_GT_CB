@@ -52,3 +52,6 @@ if [ "$DRY_RUN" = "1" ]; then
 else
   echo "Cleanup complete."
 fi
+
+
+# DRY_RUN=0 /Dedicated/Humberto/WMO_Caribbean_Comoros/TITO/TITO_GuatemalaTraining/cleanup_outputs.sh

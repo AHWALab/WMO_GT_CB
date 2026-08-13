@@ -8,6 +8,14 @@ EF5_conf/basic/
 EF5_conf/parameters/
 outputs/
 logs/
+# FIM scenario store (unzipped zarr ~70MB+) — mount fim_store/ at runtime
+fim_store/**/*.zarr/
+fim_store/**/*.zarr
+fim_store/*.zarr.zip
+# EF5 image archives (loaded separately; not needed inside tito image)
+EF5/*.tar
+EF5/*.tar.gz
+EF5/*.sif
 __pycache__/
 *.pyc
 tito.sif
