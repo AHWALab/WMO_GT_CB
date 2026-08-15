@@ -23,7 +23,7 @@
 #   ./run_ef5.sh conf/my_control.txt      # run with a different control file
 #   ./run_ef5.sh --bash                   # interactive shell (inspect data)
 #
-# The image is ensured via docker/build_ef5.sh (reuse existing / load / build).
+# Requires image ef5-container:latest already present (build/load separately).
 # ============================================================================
 set -euo pipefail
 
@@ -55,10 +55,12 @@ fi
 SHM_SIZE="32g"
 NOFILE_LIMIT="1048576"
 
-# --- Make sure the image is available (reuse / load / build) -----------------
+# --- Require image already present (no load / build) -------------------------
 if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
-    echo ">>> Image ${IMAGE_NAME} not found — preparing it..."
-    bash "${SCRIPT_DIR}/docker/build_ef5.sh"
+    echo "ERROR: Docker image ${IMAGE_NAME} not found." >&2
+    echo "  Build it first:  ./docker/build_ef5.sh --rebuild" >&2
+    echo "  Or load offline: ./docker/build_ef5.sh --load" >&2
+    exit 1
 fi
 
 # --- Interactive shell mode ---------------------------------------------------

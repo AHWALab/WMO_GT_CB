@@ -66,12 +66,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Ensure image exists (reuse / load / build via pure CMD)
+REM Require image already present (no load / build)
 docker image inspect "%IMAGE%" >nul 2>&1
 if errorlevel 1 (
-  echo Image %IMAGE% not found - preparing it...
-  call "%ROOT%\docker\build_ef5.cmd"
-  if errorlevel 1 exit /b 1
+  echo ERROR: Docker image %IMAGE% not found.
+  echo   Build it first:  docker\build_ef5.cmd -Rebuild
+  echo   Or load offline: docker\build_ef5.cmd -Load
+  exit /b 1
 )
 
 if not defined OMP_NUM_THREADS (
